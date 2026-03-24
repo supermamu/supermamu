@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 const PROXY = "https://coto-proxy.fernandezfruiz.workers.dev";
+const AI_PROXY = "https://supermamu-ai.fernandezfruiz.workers.dev";
 
 const TIENDAS = [
   { id: "carrefour", label: "Carrefour", color: "#003087", mapsQuery: "Carrefour" },
@@ -226,22 +227,21 @@ function CartView({ cart, setCart }) {
 }
 
 /* ═══════ AI MENU ═══════ */
-function MenuIA({ apiKey, setTab, onSearchProduct, menuStep, setMenuStep, menuResult, setMenuResult }) {
+function MenuIA({ setTab, onSearchProduct, menuStep, setMenuStep, menuResult, setMenuResult }) {
   const [personas, setPersonas] = useState("4");
   const [restricciones, setRestricciones] = useState("");
   const [presupuesto, setPresupuesto] = useState("moderado");
   const [error, setError] = useState(null);
 
   const generateMenu = async () => {
-    if (!apiKey) { setError("Ingresá tu API Key de OpenRouter en Configuración"); return; }
     setMenuStep("loading"); setError(null);
     try {
       const supermercados = TIENDAS.map((t) => t.label).join(", ");
       const prompt = "Sos un nutricionista argentino experto en cocina familiar y en hacer compras inteligentes. Generá un menú semanal (lunes a domingo) para " + personas + " personas.\n" + (restricciones ? "Restricciones alimentarias: " + restricciones : "Sin restricciones alimentarias especiales.") + "\nPresupuesto: " + presupuesto + ".\n\nIMPORTANTE SOBRE LOS INGREDIENTES:\nLa lista de ingredientes debe contener ÚNICAMENTE productos que se compran en un supermercado, verdulería o carnicería. Cada ingrediente debe ser un PRODUCTO REAL que se puede encontrar en una góndola o mostrador, NO un plato preparado.\n\nEjemplos CORRECTOS: \"Pechuga de pollo 1 kg\", \"Arroz largo fino 500 g\", \"Tomates redondos 1 kg\", \"Queso cremoso 400 g\", \"Aceite de girasol 1.5 L\", \"Cebolla 1 kg\", \"Pan lactal 500 g\"\nEjemplos INCORRECTOS: \"Ensalada de pollo\", \"Milanesas con puré\", \"Tarta de verduras\" (estos son platos, no productos)\n\nSepará los ingredientes por categoría usando este formato JSON exacto. Respondé ÚNICAMENTE con JSON válido, sin texto adicional, sin markdown, sin backticks:\n{\"menu\":[{\"dia\":\"Lunes\",\"almuerzo\":\"nombre del plato\",\"cena\":\"nombre del plato\"},{\"dia\":\"Martes\",\"almuerzo\":\"nombre del plato\",\"cena\":\"nombre del plato\"},{\"dia\":\"Miércoles\",\"almuerzo\":\"nombre del plato\",\"cena\":\"nombre del plato\"},{\"dia\":\"Jueves\",\"almuerzo\":\"nombre del plato\",\"cena\":\"nombre del plato\"},{\"dia\":\"Viernes\",\"almuerzo\":\"nombre del plato\",\"cena\":\"nombre del plato\"},{\"dia\":\"Sábado\",\"almuerzo\":\"nombre del plato\",\"cena\":\"nombre del plato\"},{\"dia\":\"Domingo\",\"almuerzo\":\"nombre del plato\",\"cena\":\"nombre del plato\"}],\"supermercado\":[\"producto 1 con cantidad\",\"producto 2 con cantidad\"],\"verduleria\":[\"producto 1 con cantidad\"],\"carniceria\":[\"producto 1 con cantidad\"],\"tips\":\"Un consejo útil breve para ahorrar en la compra\"}\n\nUsá nombres comerciales argentinos cuando sea posible (ej: \"Fideos Matarazzo spaghetti 500 g\" en vez de solo \"fideos\"). Incluí cantidades aproximadas para " + personas + " personas durante una semana.";
 
-      const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      const resp = await fetch(AI_PROXY, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey, "HTTP-Referer": window.location.origin, "X-Title": "SuperMamu" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model: "arcee-ai/trinity-large-preview:free", messages: [{ role: "system", content: "Respondés ÚNICAMENTE con JSON válido. Sin texto, sin markdown, solo JSON." }, { role: "user", content: prompt }], max_tokens: 4096, temperature: 0.7 }),
       });
       if (!resp.ok) { const t = await resp.text().catch(() => ""); let m = "Error " + resp.status; try { m = JSON.parse(t).error?.message || m; } catch {} throw new Error(m); }
@@ -321,27 +321,19 @@ function MenuIA({ apiKey, setTab, onSearchProduct, menuStep, setMenuStep, menuRe
       <div style={S.formGroup}><label style={S.formLabel}>{"\uD83D\uDCB0"} Presupuesto</label><div style={{ display: "flex", gap: 8 }}>{[["económico","Económico"],["moderado","Moderado"],["sin límite","Sin límite"]].map(([v,l]) => <button key={v} style={{ ...S.chipBtn, flex: 1, ...(presupuesto === v ? S.chipBtnActive : {}) }} onClick={() => setPresupuesto(v)}>{l}</button>)}</div></div>
       <div style={S.formGroup}><label style={S.formLabel}>{"\uD83E\uDD57"} Restricciones alimentarias (opcional)</label><input style={S.input} value={restricciones} onChange={(e) => setRestricciones(e.target.value)} placeholder="Ej: sin gluten, vegetariano..." /></div>
       <button style={{ ...S.btnPrimary, width: "100%", padding: "16px 24px", fontSize: 16, marginTop: 8 }} onClick={generateMenu}>{"\u2728"} Generar mi menú semanal</button>
-      {!apiKey && <div style={{ ...S.tipBox, marginTop: 16, background: "#fef3c7", borderColor: "#fcd34d" }}>{"\u26A0\uFE0F"} Necesitás configurar tu API Key de OpenRouter en la pestaña <strong>{"\u2699\uFE0F"} Config</strong> para usar esta función.</div>}
     </div>
   );
 }
 
 /* ═══════ CONFIG VIEW ═══════ */
-function ConfigView({ apiKey, setApiKey }) {
-  const [tempKey, setTempKey] = useState(apiKey);
+function ConfigView() {
   return (
     <div>
       <div style={S.aiHero}><div style={{ fontSize: 48, marginBottom: 8 }}>{"\u2699\uFE0F"}</div><h3 style={{ fontSize: 20, fontWeight: 800, fontFamily: "'Fredoka', sans-serif" }}>Configuración</h3></div>
-      <div style={S.formGroup}>
-        <label style={S.formLabel}>{"\uD83D\uDD11"} API Key de OpenRouter</label>
-        <p style={{ fontSize: 12, color: "#78716c", marginBottom: 8 }}>Necesaria para el menú con IA. Conseguí una gratis en <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" style={{ color: "#ea580c" }}>openrouter.ai/keys</a></p>
-        <input style={S.input} type="password" value={tempKey} onChange={(e) => setTempKey(e.target.value)} placeholder="sk-or-..." />
-        <button style={{ ...S.btnPrimary, marginTop: 8, width: "100%" }} onClick={() => { setApiKey(tempKey); try { localStorage.setItem("supermamu_apikey", tempKey); } catch {} }}>Guardar API Key</button>
-      </div>
-      <div style={{ ...S.card, marginTop: 24, padding: 16 }}>
+      <div style={{ ...S.card, padding: 16 }}>
         <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>{"\uD83D\uDCF1"} Sobre SuperMamu</div>
         <p style={{ fontSize: 13, color: "#78716c", lineHeight: 1.6 }}>Compará precios entre los principales supermercados argentinos. Escaneá o buscá productos, armá tu lista de compras, y dejá que la IA te ayude a planificar tu menú semanal ahorrando.</p>
-        <div style={{ fontSize: 12, color: "#a3a3a3", marginTop: 12 }}>Modelo IA: arcee-ai/trinity-large-preview:free (vía OpenRouter)</div>
+        <div style={{ fontSize: 12, color: "#a3a3a3", marginTop: 12 }}>Menú IA powered by OpenRouter</div>
       </div>
     </div>
   );
@@ -355,7 +347,6 @@ export default function SuperMamu() {
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [cart, setCart] = useState([]);
-  const [apiKey, setApiKey] = useState("");
   const [toast, setToast] = useState(null);
   const [scannerActive, setScannerActive] = useState(false);
   const [searchStep, setSearchStep] = useState("idle");
@@ -371,7 +362,6 @@ export default function SuperMamu() {
   const searchingRef = useRef(false);
 
   useEffect(() => {
-    try { const k = localStorage.getItem("supermamu_apikey"); if (k) setApiKey(k); } catch {}
     try { const m = localStorage.getItem("supermamu_menu"); if (m) { const parsed = JSON.parse(m); setMenuResult(parsed); setMenuStep("result"); } } catch {}
     try { const c = localStorage.getItem("supermamu_cart"); if (c) setCart(JSON.parse(c)); } catch {}
     if (!document.getElementById("html5qr-script")) { const s = document.createElement("script"); s.id = "html5qr-script"; s.src = "https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"; s.async = true; document.head.appendChild(s); }
@@ -483,9 +473,9 @@ export default function SuperMamu() {
             {!searching && searchStep === "idle" && !scannerActive && <div style={S.emptyState}><div style={{ fontSize: 56, marginBottom: 12 }}>{"\uD83D\uDD0D"}</div><div style={{ fontWeight: 600 }}>Buscá o escaneá un producto</div><div style={{ fontSize: 13, color: "#a3a3a3", marginTop: 4, maxWidth: 260, lineHeight: 1.5, margin: "4px auto 0" }}>Escribí el nombre, un código EAN, o tocá {"\uD83D\uDCF7"} para escanear el código de barras</div></div>}
           </div>
         )}
-        {tab === "menu" && <MenuIA apiKey={apiKey} setTab={setTab} onSearchProduct={(q) => { setQuery(q); setTab("buscar"); setTimeout(() => doSearchOptions(q), 100); }} menuStep={menuStep} setMenuStep={setMenuStep} menuResult={menuResult} setMenuResult={setMenuResult} />}
+        {tab === "menu" && <MenuIA setTab={setTab} onSearchProduct={(q) => { setQuery(q); setTab("buscar"); setTimeout(() => doSearchOptions(q), 100); }} menuStep={menuStep} setMenuStep={setMenuStep} menuResult={menuResult} setMenuResult={setMenuResult} />}
         {tab === "carrito" && <CartView cart={cart} setCart={setCart} />}
-        {tab === "config" && <ConfigView apiKey={apiKey} setApiKey={setApiKey} />}
+        {tab === "config" && <ConfigView />}
       </div>
       {toast && <div style={S.toast}>{toast}</div>}
       <style>{`
