@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
-const PROXY = "https://coto-proxy.fernandezfruiz.workers.dev";
+const PROXY = "https://coto-proxy.supermamuuu.workers.dev";
 const AI_PROXY = "https://supermamu-ai.supermamuuu.workers.dev";
 
 const TIENDAS = [
