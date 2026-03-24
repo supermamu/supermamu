@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 const PROXY = "https://coto-proxy.fernandezfruiz.workers.dev";
-const AI_PROXY = "https://supermamu-ai.fernandezfruiz.workers.dev";
+const AI_PROXY = "https://supermamu-ai.supermamuuu.workers.dev";
 
 const TIENDAS = [
   { id: "carrefour", label: "Carrefour", color: "#003087", mapsQuery: "Carrefour" },
@@ -237,12 +237,12 @@ function MenuIA({ setTab, onSearchProduct, menuStep, setMenuStep, menuResult, se
     setMenuStep("loading"); setError(null);
     try {
       const supermercados = TIENDAS.map((t) => t.label).join(", ");
-      const prompt = "Sos un nutricionista argentino experto en cocina familiar y en hacer compras inteligentes. Generá un menú semanal (lunes a domingo) para " + personas + " personas.\n" + (restricciones ? "Restricciones alimentarias: " + restricciones : "Sin restricciones alimentarias especiales.") + "\nPresupuesto: " + presupuesto + ".\n\nIMPORTANTE SOBRE LOS INGREDIENTES:\nLa lista de ingredientes debe contener ÚNICAMENTE productos que se compran en un supermercado, verdulería o carnicería. Cada ingrediente debe ser un PRODUCTO REAL que se puede encontrar en una góndola o mostrador, NO un plato preparado.\n\nEjemplos CORRECTOS: \"Pechuga de pollo 1 kg\", \"Arroz largo fino 500 g\", \"Tomates redondos 1 kg\", \"Queso cremoso 400 g\", \"Aceite de girasol 1.5 L\", \"Cebolla 1 kg\", \"Pan lactal 500 g\"\nEjemplos INCORRECTOS: \"Ensalada de pollo\", \"Milanesas con puré\", \"Tarta de verduras\" (estos son platos, no productos)\n\nSepará los ingredientes por categoría usando este formato JSON exacto. Respondé ÚNICAMENTE con JSON válido, sin texto adicional, sin markdown, sin backticks:\n{\"menu\":[{\"dia\":\"Lunes\",\"almuerzo\":\"nombre del plato\",\"cena\":\"nombre del plato\"},{\"dia\":\"Martes\",\"almuerzo\":\"nombre del plato\",\"cena\":\"nombre del plato\"},{\"dia\":\"Miércoles\",\"almuerzo\":\"nombre del plato\",\"cena\":\"nombre del plato\"},{\"dia\":\"Jueves\",\"almuerzo\":\"nombre del plato\",\"cena\":\"nombre del plato\"},{\"dia\":\"Viernes\",\"almuerzo\":\"nombre del plato\",\"cena\":\"nombre del plato\"},{\"dia\":\"Sábado\",\"almuerzo\":\"nombre del plato\",\"cena\":\"nombre del plato\"},{\"dia\":\"Domingo\",\"almuerzo\":\"nombre del plato\",\"cena\":\"nombre del plato\"}],\"supermercado\":[\"producto 1 con cantidad\",\"producto 2 con cantidad\"],\"verduleria\":[\"producto 1 con cantidad\"],\"carniceria\":[\"producto 1 con cantidad\"],\"tips\":\"Un consejo útil breve para ahorrar en la compra\"}\n\nUsá nombres comerciales argentinos cuando sea posible (ej: \"Fideos Matarazzo spaghetti 500 g\" en vez de solo \"fideos\"). Incluí cantidades aproximadas para " + personas + " personas durante una semana.";
+      const prompt = "Sos un nutricionista argentino experto en cocina familiar y en hacer compras inteligentes. Generá un menú semanal (lunes a domingo) para " + personas + " personas.\n" + (restricciones ? "Restricciones alimentarias: " + restricciones : "Sin restricciones alimentarias especiales.") + "\nPresupuesto: " + presupuesto + ".\n\nIMPORTANTE SOBRE LOS INGREDIENTES:\n- La lista debe contener ÚNICAMENTE productos reales que se compran en un supermercado, verdulería o carnicería. Cada ingrediente debe ser algo que se encuentra en una góndola o mostrador.\n- NUNCA repitas un producto. Si un ingrediente se usa en varios platos, listalo UNA SOLA VEZ con la cantidad total para la semana.\n- Usá nombres comerciales argentinos cuando sea posible (ej: \"Fideos Matarazzo spaghetti 500 g\").\n- Incluí cantidades aproximadas para " + personas + " personas durante una semana.\n\nEjemplos CORRECTOS de ingredientes: \"Pechuga de pollo 2 kg\", \"Arroz largo fino 1 kg\", \"Tomates redondos 2 kg\", \"Cebolla 1.5 kg\", \"Aceite de girasol 1.5 L\"\nEjemplos INCORRECTOS: \"Ensalada de pollo\", \"Milanesas con puré\", \"Tarta de verduras\" (estos son platos, NO productos)\n\nRespondé ÚNICAMENTE con JSON válido, sin texto adicional, sin markdown, sin backticks:\n{\"menu\":[{\"dia\":\"Lunes\",\"almuerzo\":\"nombre del plato\",\"cena\":\"nombre del plato\"},{\"dia\":\"Martes\",\"almuerzo\":\"nombre del plato\",\"cena\":\"nombre del plato\"},{\"dia\":\"Miércoles\",\"almuerzo\":\"nombre del plato\",\"cena\":\"nombre del plato\"},{\"dia\":\"Jueves\",\"almuerzo\":\"nombre del plato\",\"cena\":\"nombre del plato\"},{\"dia\":\"Viernes\",\"almuerzo\":\"nombre del plato\",\"cena\":\"nombre del plato\"},{\"dia\":\"Sábado\",\"almuerzo\":\"nombre del plato\",\"cena\":\"nombre del plato\"},{\"dia\":\"Domingo\",\"almuerzo\":\"nombre del plato\",\"cena\":\"nombre del plato\"}],\"ingredientes\":[\"producto 1 con cantidad total\",\"producto 2 con cantidad total\"],\"tips\":\"Un consejo útil breve para ahorrar en la compra\"}";
 
       const resp = await fetch(AI_PROXY, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "arcee-ai/trinity-large-preview:free", messages: [{ role: "system", content: "Respondés ÚNICAMENTE con JSON válido. Sin texto, sin markdown, solo JSON." }, { role: "user", content: prompt }], max_tokens: 4096, temperature: 0.7 }),
+        body: JSON.stringify({ model: "arcee-ai/trinity-large-preview:free", messages: [{ role: "system", content: "Respondés ÚNICAMENTE con JSON válido. Sin texto, sin markdown, solo JSON. NUNCA repitas ingredientes en la lista." }, { role: "user", content: prompt }], max_tokens: 4096, temperature: 0.7 }),
       });
       if (!resp.ok) { const t = await resp.text().catch(() => ""); let m = "Error " + resp.status; try { m = JSON.parse(t).error?.message || m; } catch {} throw new Error(m); }
       const rawText = await resp.text();
@@ -256,9 +256,20 @@ function MenuIA({ setTab, onSearchProduct, menuStep, setMenuStep, menuResult, se
       content = content.slice(js, je + 1);
       let parsed; try { parsed = JSON.parse(content); } catch { try { parsed = JSON.parse(content.replace(/,\s*([}\]])/g, "$1")); } catch { throw new Error("JSON incompleto. Intentá de nuevo."); } }
       if (!parsed.menu || !Array.isArray(parsed.menu)) throw new Error("Menú inválido. Intentá de nuevo.");
-      // Normalize: support both old format (ingredientes) and new format (supermercado/verduleria/carniceria)
-      if (!parsed.supermercado && parsed.ingredientes) {
-        parsed.supermercado = parsed.ingredientes;
+      // Normalize: merge category lists into single ingredientes if model used categories
+      if (!parsed.ingredientes) {
+        const all = [...(parsed.supermercado || []), ...(parsed.verduleria || []), ...(parsed.carniceria || [])];
+        parsed.ingredientes = all;
+      }
+      // Deduplicate ingredients (case-insensitive)
+      if (parsed.ingredientes) {
+        const seen = new Set();
+        parsed.ingredientes = parsed.ingredientes.filter((ing) => {
+          const key = ing.toLowerCase().trim();
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
       }
       setMenuResult(parsed); setMenuStep("result");
       try { localStorage.setItem("supermamu_menu", JSON.stringify(parsed)); } catch {}
@@ -273,11 +284,6 @@ function MenuIA({ setTab, onSearchProduct, menuStep, setMenuStep, menuResult, se
   if (menuStep === "loading") return <div style={S.emptyState}><div style={S.spinner} /><div style={{ marginTop: 16, fontWeight: 600 }}>Generando tu menú semanal...</div><div style={{ fontSize: 13, color: "#a3a3a3", marginTop: 4 }}>Esto puede tardar unos segundos</div></div>;
 
   if (menuStep === "result" && menuResult) {
-    const sections = [
-      { key: "supermercado", icon: "\uD83D\uDED2", label: "Supermercado" },
-      { key: "verduleria", icon: "\uD83E\uDD66", label: "Verdulería" },
-      { key: "carniceria", icon: "\uD83E\uDD69", label: "Carnicería" },
-    ];
     return (
       <div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
@@ -292,23 +298,14 @@ function MenuIA({ setTab, onSearchProduct, menuStep, setMenuStep, menuResult, se
         <h3 style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Fredoka', sans-serif", marginBottom: 4, marginTop: 20 }}>{"\uD83D\uDECD\uFE0F"} Lista de Compras</h3>
         <div style={{ fontSize: 12, color: "#78716c", marginBottom: 12 }}>Tocá un producto para buscarlo y comparar precios</div>
 
-        {sections.map(({ key, icon, label }) => {
-          const items = menuResult[key];
-          if (!items?.length) return null;
-          return (
-            <div key={key} style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, fontFamily: "'Fredoka', sans-serif", marginBottom: 6, color: "#57534e" }}>{icon} {label}</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                {items.map((ing, i) => (
-                  <button key={i} style={S.ingredientBtn} onClick={() => handleIngredientClick(ing)}>
-                    <span style={{ flex: 1, textAlign: "left" }}>{ing}</span>
-                    <span style={{ color: "#ea580c", fontSize: 13, flexShrink: 0 }}>{"\uD83D\uDD0D"} Buscar</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          );
-        })}
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {menuResult.ingredientes?.map((ing, i) => (
+            <button key={i} style={S.ingredientBtn} onClick={() => handleIngredientClick(ing)}>
+              <span style={{ flex: 1, textAlign: "left" }}>{ing}</span>
+              <span style={{ color: "#ea580c", fontSize: 13, flexShrink: 0 }}>{"\uD83D\uDD0D"} Buscar</span>
+            </button>
+          ))}
+        </div>
       </div>
     );
   }
