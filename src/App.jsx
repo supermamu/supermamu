@@ -462,7 +462,7 @@ export default function SuperMamu() {
   return (
     <div style={S.app}>
       <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet" />
-      <div style={S.header}><div style={S.logo}><span style={{ color: "#ea580c" }}>Super</span><span style={{ color: "#171717" }}>Mamu</span><span style={{ fontSize: 16, marginLeft: 4 }}>{"\uD83D\uDED2"}</span></div><button style={S.cartHeaderBtn} onClick={() => setTab("carrito")}>{"\uD83D\uDED2"} {totalItems > 0 && <span style={S.cartBadge}>{totalItems}</span>}</button></div>
+      <div style={S.header}><div style={S.logo}><img src="/logo.png" alt="SuperMamu" style={{ height: 52, width: 52, borderRadius: 12, marginRight: 10, verticalAlign: "middle" }} /><span style={{ color: "#ea580c" }}>Super</span><span style={{ color: "#171717" }}>Mamu</span></div><button style={S.cartHeaderBtn} onClick={() => setTab("carrito")}>{"\uD83D\uDED2"} {totalItems > 0 && <span style={S.cartBadge}>{totalItems}</span>}</button></div>
       <div style={S.tabBar}>
         {[["buscar","\uD83D\uDD0D","Buscar"],["menu","\uD83E\uDD16","Menú IA"],["carrito","\uD83D\uDED2","Carrito"],["config","\u2699\uFE0F","Config"]].map(([id,icon,label]) => <button key={id} style={{ ...S.tabItem, ...(tab === id ? S.tabActive : {}) }} onClick={() => setTab(id)}><span style={{ fontSize: 18 }}>{icon}</span><span style={{ fontSize: 10, marginTop: 2 }}>{label}</span></button>)}
       </div>

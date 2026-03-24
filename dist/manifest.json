@@ -1,16 +1,23 @@
 {
   "name": "SuperMamu",
   "short_name": "SuperMamu",
-  "description": "Compará precios de supermercados argentinos",
+  "description": "Tu guía de precios para el hogar y la familia",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#faf9f6",
   "theme_color": "#ea580c",
   "icons": [
     {
-      "src": "/favicon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml"
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }
