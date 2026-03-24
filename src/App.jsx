@@ -100,9 +100,11 @@ async function comparePrices(ean, exactName) {
   );
   const cotoConfig = TIENDAS.find((t) => t.id === "coto");
   let cotoResult = { ...cotoConfig, nombre: null, precio: null, listPrice: null, link: null, hasOffer: false, imagen: null };
-  if (exactName) {
+  // Coto doesn't search by EAN — use exactName or fall back to name from VTEX results
+  const cotoSearchName = exactName || vtexResults.find((r) => r.nombre)?.nombre;
+  if (cotoSearchName) {
     try {
-      const resp = await fetch(PROXY + "?tienda=coto&q=" + encodeURIComponent(exactName));
+      const resp = await fetch(PROXY + "?tienda=coto&q=" + encodeURIComponent(cotoSearchName));
       if (resp.ok) {
         const data = await resp.json();
         if (data.products?.length) { cotoResult = { ...cotoConfig, ...parseCotoProduct(data.products[0]) }; }
