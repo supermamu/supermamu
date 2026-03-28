@@ -150,8 +150,22 @@ function ProductOptionsList({ options, onSelect, onBack }) {
   );
 }
 
+/* ═══════ IMAGE MODAL ═══════ */
+function ImageModal({ src, alt, onClose }) {
+  if (!src) return null;
+  return (
+    <div style={S.modalOverlay} onClick={onClose}>
+      <div style={S.modalContent} onClick={(e) => e.stopPropagation()}>
+        <button style={S.modalClose} onClick={onClose}>{"\u2715"}</button>
+        <img src={src} alt={alt || ""} style={S.modalImage} />
+      </div>
+    </div>
+  );
+}
+
 /* ═══════ PRICE COMPARISON CARD ═══════ */
 function PriceCard({ result, productName, productImage, onAddToCart, onAddToLista, onBack }) {
+  const [showImageModal, setShowImageModal] = useState(false);
   const withPrice = result.filter((r) => r.precio);
   const minPrice = withPrice.length ? Math.min(...withPrice.map((r) => r.precio)) : 0;
   const nombre = productName || result.find((r) => r.nombre)?.nombre || "Producto";
@@ -159,7 +173,7 @@ function PriceCard({ result, productName, productImage, onAddToCart, onAddToList
   return (
     <div style={S.card}>
       <div style={S.cardHeader}>
-        {imagen ? <img src={imagen} alt="" style={S.cardImg} onError={(e) => (e.target.style.display = "none")} /> : <div style={S.cardImgPlaceholder}>{"\uD83D\uDED2"}</div>}
+        {imagen ? <img src={imagen} alt="" style={S.cardImg} onClick={() => setShowImageModal(true)} onError={(e) => (e.target.style.display = "none")} /> : <div style={S.cardImgPlaceholder}>{"\uD83D\uDED2"}</div>}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={S.cardName}>{nombre}</div>
           <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
@@ -168,6 +182,7 @@ function PriceCard({ result, productName, productImage, onAddToCart, onAddToList
           </div>
         </div>
       </div>
+      {showImageModal && <ImageModal src={imagen} alt={nombre} onClose={() => setShowImageModal(false)} />}
       <div>
         {result.map((r, i) => {
           const isBest = r.precio && r.precio === minPrice;
@@ -1207,7 +1222,10 @@ function FarmaciaView() {
 
       {/* Search */}
       <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        <input style={S.searchInput} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && doSearch()} placeholder={subTab === "medicamentos" ? 'Ej: "ibuprofeno", "omeprazol"' : 'Ej: "protector solar", "shampoo"'} />
+        <div style={{ flex: 1, position: "relative" }}>
+          <input style={{ ...S.searchInput, paddingRight: 36, width: "100%" }} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && doSearch()} placeholder={subTab === "medicamentos" ? 'Ej: "ibuprofeno", "omeprazol"' : 'Ej: "protector solar", "shampoo"'} />
+          {query && <button style={S.clearBtn} onClick={() => { setQuery(""); setResults(null); setError(null); }} type="button">{"\u2715"}</button>}
+        </div>
         <button style={{ ...S.searchBtn, background: "#9333ea" }} onClick={doSearch} disabled={loading}>{loading ? "..." : "\uD83D\uDD0D"}</button>
       </div>
 
@@ -1539,7 +1557,10 @@ export default function SuperMamu() {
         {category === "super" && tab === "buscar" && (
           <div>
             <div style={S.searchBox}>
-              <input ref={inputRef} style={S.searchInput} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleSearch()} placeholder='Buscá: "agua benedictino"' />
+              <div style={{ flex: 1, position: "relative" }}>
+                <input ref={inputRef} style={{ ...S.searchInput, paddingRight: 36, width: "100%" }} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleSearch()} placeholder='Buscá: "agua benedictino"' />
+                {query && <button style={S.clearBtn} onClick={() => { setQuery(""); resetSearch(); }} type="button">{"\u2715"}</button>}
+              </div>
               <button style={S.searchBtn} onClick={handleSearch} disabled={searching}>{searching ? "..." : "\uD83D\uDD0D"}</button>
               <button style={{ ...S.scanBtn, background: scannerActive ? "#dc2626" : "#d6d3d1", color: scannerActive ? "#fff" : "#57534e" }} onClick={() => scannerActive ? stopScanner() : startScanner()}>{scannerActive ? "\u2715" : "\uD83D\uDCF7"}</button>
             </div>
@@ -1607,6 +1628,7 @@ const S = {
   searchInput: { flex: 1, padding: "14px 16px", borderRadius: 14, border: "1.5px solid #e7e5e4", background: "#fff", fontSize: 15, fontFamily: "'DM Sans', sans-serif", color: "#171717", minWidth: 0 },
   searchBtn: { padding: "14px 16px", borderRadius: 14, border: "none", background: "#ea580c", color: "#fff", fontSize: 18, cursor: "pointer", fontWeight: 700, flexShrink: 0 },
   scanBtn: { padding: "14px 15px", borderRadius: 14, border: "none", fontSize: 16, cursor: "pointer", fontWeight: 700, flexShrink: 0 },
+  clearBtn: { position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", border: "none", background: "#e7e5e4", color: "#78716c", width: 22, height: 22, borderRadius: "50%", fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, lineHeight: 1 },
   suggestionChip: { padding: "6px 12px", borderRadius: 20, border: "1px solid #e7e5e4", background: "#fff", color: "#78716c", fontSize: 12, cursor: "pointer", fontFamily: "'DM Sans', sans-serif" },
   scannerWrap: { marginBottom: 14, borderRadius: 14, border: "2px solid #ea580c", overflow: "hidden", background: "#e7e5e4", animation: "scanPulse 2s ease infinite" },
   scannerRegion: { width: "100%", maxHeight: 130, overflow: "hidden" },
@@ -1615,8 +1637,8 @@ const S = {
 
   // Product options
   optionCard: { display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: "#fff", border: "1px solid #e7e5e4", borderRadius: 14, cursor: "pointer", width: "100%", fontFamily: "'DM Sans', sans-serif" },
-  optionImg: { width: 56, height: 56, objectFit: "contain", borderRadius: 8, border: "1px solid #f5f5f4", background: "#fff", flexShrink: 0 },
-  optionImgPlaceholder: { width: 56, height: 56, borderRadius: 8, border: "1px solid #f5f5f4", background: "#f5f5f4", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 },
+  optionImg: { width: 64, height: 64, objectFit: "contain", borderRadius: 10, border: "1px solid #f5f5f4", background: "#fff", flexShrink: 0 },
+  optionImgPlaceholder: { width: 64, height: 64, borderRadius: 10, border: "1px solid #f5f5f4", background: "#f5f5f4", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 },
   optionName: { fontFamily: "'Fredoka', sans-serif", fontWeight: 600, fontSize: 14, lineHeight: 1.3, color: "#171717" },
   optionBrand: { fontSize: 12, color: "#78716c", marginTop: 1 },
   optionEan: { fontSize: 11, color: "#a3a3a3", marginTop: 1 },
@@ -1626,8 +1648,14 @@ const S = {
   // Cards
   card: { background: "#fff", border: "1px solid #e7e5e4", borderRadius: 16, overflow: "hidden", animation: "slideUp 0.25s ease" },
   cardHeader: { padding: "16px 18px", borderBottom: "1px solid #f5f5f4", display: "flex", gap: 14, alignItems: "flex-start" },
-  cardImg: { width: 100, height: 100, objectFit: "contain", borderRadius: 10, border: "1px solid #f5f5f4", background: "#fff", flexShrink: 0 },
-  cardImgPlaceholder: { width: 100, height: 100, borderRadius: 10, border: "1px solid #f5f5f4", background: "#f5f5f4", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2.5rem", flexShrink: 0 },
+  cardImg: { width: 120, height: 120, objectFit: "contain", borderRadius: 12, border: "1px solid #f5f5f4", background: "#fff", flexShrink: 0, cursor: "pointer" },
+  cardImgPlaceholder: { width: 120, height: 120, borderRadius: 12, border: "1px solid #f5f5f4", background: "#f5f5f4", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2.5rem", flexShrink: 0 },
+
+  // Image modal
+  modalOverlay: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.75)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, animation: "fadeIn 0.2s ease" },
+  modalContent: { position: "relative", maxWidth: 400, width: "100%", background: "#fff", borderRadius: 20, padding: 16, boxShadow: "0 20px 60px rgba(0,0,0,0.3)" },
+  modalClose: { position: "absolute", top: -12, right: -12, width: 36, height: 36, borderRadius: "50%", border: "none", background: "#171717", color: "#fff", fontSize: 16, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 8px rgba(0,0,0,0.3)", zIndex: 1 },
+  modalImage: { width: "100%", height: "auto", maxHeight: "70vh", objectFit: "contain", borderRadius: 12 },
   cardName: { fontFamily: "'Fredoka', sans-serif", fontWeight: 600, fontSize: 16, lineHeight: 1.3 },
   priceRow: { display: "flex", alignItems: "center", padding: "12px 18px", borderBottom: "1px solid #f5f5f4", gap: 12 },
   bestTag: { fontSize: 10, background: "#15803d", color: "#fff", padding: "2px 8px", borderRadius: 10, fontWeight: 700 },
