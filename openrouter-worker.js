@@ -4,11 +4,7 @@
  * Proxies requests to OpenRouter API keeping the API key secret.
  * 
  * Deploy:
- *   npx wrangler deploy openrouter-worker.js --name supermamu-ai
- * 
- * Then set the secret:
- *   npx wrangler secret put OPENROUTER_API_KEY
- *   (paste your key when prompted)
+ *   npx wrangler deploy openrouter-worker.js --name supermamu-ai --compatibility-date 2026-03-28
  */
 
 export default {
@@ -31,7 +27,7 @@ export default {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${env.OPENROUTER_API_KEY}`,
-          'HTTP-Referer': 'https://supermamu.pages.dev',
+          'HTTP-Referer': 'https://supermamu.com.ar',
           'X-Title': 'SuperMamu',
         },
         body: body,

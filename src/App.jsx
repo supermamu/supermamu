@@ -1900,6 +1900,8 @@ export default function SuperMamu() {
         *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
         input:focus{outline:none;border-color:#ea580c!important}
         button:active{transform:scale(0.97)}
+        ::-webkit-scrollbar{height:0;width:0}
+        *{scrollbar-width:none}
         #mamu-scanner-region video{border-radius:10px!important;object-fit:cover!important;max-height:130px!important}
         #mamu-scanner-region{border-radius:10px!important;overflow:hidden!important;max-height:130px!important}
         .dark{background:#1a1a1a!important;color:#e5e5e5}
@@ -1936,8 +1938,8 @@ const S = {
   cartBadge: { background: "#ea580c", color: "#fff", fontSize: 11, fontWeight: 700, padding: "1px 7px", borderRadius: 20, minWidth: 20, textAlign: "center" },
 
   // Category bar
-  categoryBar: { display: "flex", gap: 8, padding: "10px 20px", background: "#faf9f6", borderBottom: "1px solid #e7e5e4", position: "sticky", top: 61, zIndex: 99 },
-  categoryBtn: { display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 12, border: "1.5px solid #e7e5e4", background: "#fff", color: "#78716c", cursor: "pointer", fontFamily: "'DM Sans', sans-serif", flex: 1, justifyContent: "center", transition: "all 0.2s" },
+  categoryBar: { display: "flex", gap: 8, padding: "10px 20px", background: "#faf9f6", borderBottom: "1px solid #e7e5e4", position: "sticky", top: 61, zIndex: 99, overflowX: "auto", WebkitOverflowScrolling: "touch" },
+  categoryBtn: { display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 12, border: "1.5px solid #e7e5e4", background: "#fff", color: "#78716c", cursor: "pointer", fontFamily: "'DM Sans', sans-serif", justifyContent: "center", transition: "all 0.2s", whiteSpace: "nowrap", flexShrink: 0 },
 
   tabBar: { display: "flex", position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, background: "#faf9f6", borderTop: "1px solid #e7e5e4", zIndex: 100, padding: "6px 0 env(safe-area-inset-bottom, 8px) 0" },
   tabItem: { flex: 1, display: "flex", flexDirection: "column", alignItems: "center", padding: "8px 4px", border: "none", background: "transparent", color: "#a3a3a3", cursor: "pointer", fontFamily: "'DM Sans', sans-serif" },
