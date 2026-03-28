@@ -149,7 +149,7 @@ function ProductOptionsList({ options, onSelect, onBack }) {
 }
 
 /* ═══════ PRICE COMPARISON CARD ═══════ */
-function PriceCard({ result, productName, productImage, onAddToCart, onBack }) {
+function PriceCard({ result, productName, productImage, onAddToCart, onAddToLista, onBack }) {
   const withPrice = result.filter((r) => r.precio);
   const minPrice = withPrice.length ? Math.min(...withPrice.map((r) => r.precio)) : 0;
   const nombre = productName || result.find((r) => r.nombre)?.nombre || "Producto";
@@ -160,7 +160,10 @@ function PriceCard({ result, productName, productImage, onAddToCart, onBack }) {
         {imagen ? <img src={imagen} alt="" style={S.cardImg} onError={(e) => (e.target.style.display = "none")} /> : <div style={S.cardImgPlaceholder}>{"\uD83D\uDED2"}</div>}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={S.cardName}>{nombre}</div>
-          {onBack && <button style={{ ...S.btnBack, marginTop: 8, fontSize: 12 }} onClick={onBack}>{"\u2190"} Elegir otro</button>}
+          <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+            {onBack && <button style={{ ...S.btnBack, fontSize: 12 }} onClick={onBack}>{"\u2190"} Elegir otro</button>}
+            {onAddToLista && <button style={{ ...S.btnBack, fontSize: 12, color: "#ea580c", borderColor: "#fed7aa" }} onClick={() => onAddToLista(nombre)}>{"\uD83D\uDCDD"} A la lista</button>}
+          </div>
         </div>
       </div>
       <div>
@@ -234,7 +237,7 @@ function CartView({ cart, setCart }) {
 }
 
 /* ═══════ AI MENU ═══════ */
-function MenuIA({ setTab, onSearchProduct, menuStep, setMenuStep, menuResult, setMenuResult }) {
+function MenuIA({ setTab, onSearchProduct, menuStep, setMenuStep, menuResult, setMenuResult, onAddToLista, onAddAllToLista }) {
   const [personas, setPersonas] = useState("4");
   const [restricciones, setRestricciones] = useState("");
   const [presupuesto, setPresupuesto] = useState("moderado");
@@ -292,13 +295,23 @@ function MenuIA({ setTab, onSearchProduct, menuStep, setMenuStep, menuResult, se
         </div>
         {menuResult.tips && <div style={S.tipBox}>{"\uD83D\uDCA1"} <strong>Tip:</strong> {menuResult.tips}</div>}
         <h3 style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Fredoka', sans-serif", marginBottom: 4, marginTop: 20 }}>{"\uD83D\uDECD\uFE0F"} Lista de Compras</h3>
-        <div style={{ fontSize: 12, color: "#78716c", marginBottom: 12 }}>Tocá un producto para buscarlo y comparar precios</div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div style={{ fontSize: 12, color: "#78716c" }}>Tocá un producto para buscarlo</div>
+          {onAddAllToLista && menuResult.ingredientes?.length > 0 && (
+            <button style={{ ...S.btnSmall, color: "#ea580c", fontWeight: 600, fontSize: 12 }} onClick={() => onAddAllToLista(menuResult.ingredientes)}>{"\uD83D\uDCDD"} Agregar todo a la lista</button>
+          )}
+        </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           {menuResult.ingredientes?.map((ing, i) => (
-            <button key={i} style={S.ingredientBtn} onClick={() => handleIngredientClick(ing)}>
-              <span style={{ flex: 1, textAlign: "left" }}>{ing}</span>
-              <span style={{ color: "#ea580c", fontSize: 13, flexShrink: 0 }}>{"\uD83D\uDD0D"}</span>
-            </button>
+            <div key={i} style={{ display: "flex", gap: 4 }}>
+              <button style={{ ...S.ingredientBtn, flex: 1 }} onClick={() => handleIngredientClick(ing)}>
+                <span style={{ flex: 1, textAlign: "left" }}>{ing}</span>
+                <span style={{ color: "#ea580c", fontSize: 13, flexShrink: 0 }}>{"\uD83D\uDD0D"}</span>
+              </button>
+              {onAddToLista && (
+                <button style={{ ...S.addStoreBtn, borderColor: "#ea580c", width: 36, height: "auto" }} onClick={() => onAddToLista(ing)} title="Agregar a la lista">{"\uD83D\uDCDD"}</button>
+              )}
+            </div>
           ))}
         </div>
       </div>
@@ -313,6 +326,129 @@ function MenuIA({ setTab, onSearchProduct, menuStep, setMenuStep, menuResult, se
       <div style={S.formGroup}><label style={S.formLabel}>{"\uD83D\uDCB0"} Presupuesto</label><div style={{ display: "flex", gap: 8 }}>{[["económico","Económico"],["moderado","Moderado"],["sin límite","Sin límite"]].map(([v,l]) => <button key={v} style={{ ...S.chipBtn, flex: 1, ...(presupuesto === v ? S.chipBtnActive : {}) }} onClick={() => setPresupuesto(v)}>{l}</button>)}</div></div>
       <div style={S.formGroup}><label style={S.formLabel}>{"\uD83E\uDD57"} Restricciones (opcional)</label><input style={S.input} value={restricciones} onChange={(e) => setRestricciones(e.target.value)} placeholder="Ej: sin gluten, vegetariano..." /></div>
       <button style={{ ...S.btnPrimary, width: "100%", padding: "16px 24px", fontSize: 16, marginTop: 8 }} onClick={generateMenu}>{"\u2728"} Generar mi menú semanal</button>
+    </div>
+  );
+}
+
+/* ═══════ LISTA DE COMPRAS VIEW ═══════ */
+function ListaView({ lista, setLista }) {
+  const [newItem, setNewItem] = useState("");
+
+  const toggleCheck = (id) => {
+    setLista((prev) => prev.map((item) => item.id === id ? { ...item, checked: !item.checked } : item));
+  };
+
+  const removeItem = (id) => {
+    setLista((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const addManualItem = () => {
+    const trimmed = newItem.trim();
+    if (!trimmed) return;
+    if (lista.some((l) => l.text.toLowerCase() === trimmed.toLowerCase())) return;
+    setLista((prev) => [...prev, { id: Date.now() + Math.random(), text: trimmed, checked: false }]);
+    setNewItem("");
+  };
+
+  const clearChecked = () => {
+    setLista((prev) => prev.filter((item) => !item.checked));
+  };
+
+  const checkedCount = lista.filter((l) => l.checked).length;
+  const uncheckedCount = lista.length - checkedCount;
+
+  if (!lista.length) {
+    return (
+      <div>
+        <div style={S.emptyState}>
+          <div style={{ fontSize: 56, marginBottom: 12 }}>{"\uD83D\uDCDD"}</div>
+          <div style={{ fontWeight: 600 }}>Tu lista está vacía</div>
+          <div style={{ fontSize: 13, color: "#a3a3a3", marginTop: 4, maxWidth: 260, margin: "4px auto 0", lineHeight: 1.5 }}>
+            Agregá productos desde la búsqueda, el menú semanal, o escribilos acá abajo
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          <input
+            style={S.searchInput}
+            value={newItem}
+            onChange={(e) => setNewItem(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addManualItem()}
+            placeholder="Agregar producto..."
+          />
+          <button style={S.searchBtn} onClick={addManualItem}>+</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div>
+          <h3 style={{ fontSize: 18, fontWeight: 800, fontFamily: "'Fredoka', sans-serif", margin: 0 }}>{"\uD83D\uDCDD"} Lista de Compras</h3>
+          <div style={{ fontSize: 12, color: "#78716c", marginTop: 2 }}>
+            {uncheckedCount} pendiente{uncheckedCount !== 1 ? "s" : ""}
+            {checkedCount > 0 && ` · ${checkedCount} listo${checkedCount !== 1 ? "s" : ""}`}
+          </div>
+        </div>
+        {checkedCount > 0 && (
+          <button style={{ ...S.btnSmall, color: "#dc2626", fontSize: 12 }} onClick={clearChecked}>
+            {"\uD83D\uDDD1\uFE0F"} Quitar listos ({checkedCount})
+          </button>
+        )}
+      </div>
+
+      {/* Add item */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        <input
+          style={S.searchInput}
+          value={newItem}
+          onChange={(e) => setNewItem(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && addManualItem()}
+          placeholder="Agregar producto..."
+        />
+        <button style={S.searchBtn} onClick={addManualItem}>+</button>
+      </div>
+
+      {/* Unchecked items */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {lista.filter((l) => !l.checked).map((item) => (
+          <div key={item.id} style={S.listaItem}>
+            <button
+              style={S.listaCheck}
+              onClick={() => toggleCheck(item.id)}
+            >
+              <span style={{ width: 22, height: 22, borderRadius: 6, border: "2px solid #d6d3d1", display: "flex", alignItems: "center", justifyContent: "center", background: "#fff" }} />
+            </button>
+            <span style={{ flex: 1, fontSize: 14, fontWeight: 500 }}>{item.text}</span>
+            <button style={S.listaRemove} onClick={() => removeItem(item.id)}>{"\u2715"}</button>
+          </div>
+        ))}
+      </div>
+
+      {/* Checked items */}
+      {checkedCount > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontSize: 12, color: "#a3a3a3", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+            {"\u2705"} Ya agarrados
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {lista.filter((l) => l.checked).map((item) => (
+              <div key={item.id} style={{ ...S.listaItem, opacity: 0.6, background: "#f5f5f4" }}>
+                <button
+                  style={S.listaCheck}
+                  onClick={() => toggleCheck(item.id)}
+                >
+                  <span style={{ width: 22, height: 22, borderRadius: 6, border: "2px solid #15803d", display: "flex", alignItems: "center", justifyContent: "center", background: "#dcfce7", color: "#15803d", fontSize: 14, fontWeight: 700 }}>{"\u2713"}</span>
+                </button>
+                <span style={{ flex: 1, fontSize: 14, fontWeight: 500, textDecoration: "line-through", color: "#a3a3a3" }}>{item.text}</span>
+                <button style={S.listaRemove} onClick={() => removeItem(item.id)}>{"\u2715"}</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -769,6 +905,7 @@ export default function SuperMamu() {
   const [menuResult, setMenuResult] = useState(null);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [comparisonResult, setComparisonResult] = useState(null);
+  const [lista, setLista] = useState([]);
   const inputRef = useRef(null);
   const scannerObjRef = useRef(null);
   const lastScannedRef = useRef(null);
@@ -777,11 +914,13 @@ export default function SuperMamu() {
   useEffect(() => {
     try { const m = localStorage.getItem("supermamu_menu"); if (m) { const parsed = JSON.parse(m); setMenuResult(parsed); setMenuStep("result"); } } catch {}
     try { const c = localStorage.getItem("supermamu_cart"); if (c) setCart(JSON.parse(c)); } catch {}
+    try { const l = localStorage.getItem("supermamu_lista"); if (l) setLista(JSON.parse(l)); } catch {}
     if (!document.getElementById("html5qr-script")) { const s = document.createElement("script"); s.id = "html5qr-script"; s.src = "https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"; s.async = true; document.head.appendChild(s); }
   }, []);
 
   useEffect(() => { if (tab !== "buscar" && scannerActive) stopScanner(); }, [tab, scannerActive]);
   useEffect(() => { try { localStorage.setItem("supermamu_cart", JSON.stringify(cart)); } catch {} }, [cart]);
+  useEffect(() => { try { localStorage.setItem("supermamu_lista", JSON.stringify(lista)); } catch {} }, [lista]);
 
   const showToast = useCallback((msg) => { setToast(msg); setTimeout(() => setToast(null), 2500); }, []);
 
@@ -857,6 +996,36 @@ export default function SuperMamu() {
     });
     showToast("Agregado de " + item.tiendaMin + " \u2713");
   };
+  const addToLista = (text) => {
+    const trimmed = (text || "").trim();
+    if (!trimmed) return;
+    // Avoid duplicates (case-insensitive)
+    if (lista.some((l) => l.text.toLowerCase() === trimmed.toLowerCase())) {
+      showToast("Ya está en la lista");
+      return;
+    }
+    setLista((prev) => [...prev, { id: Date.now() + Math.random(), text: trimmed, checked: false }]);
+    showToast("Agregado a la lista \u2713");
+  };
+  const addAllIngredientsToLista = (ingredientes) => {
+    let added = 0;
+    const existing = new Set(lista.map((l) => l.text.toLowerCase()));
+    const newItems = [];
+    for (const ing of ingredientes) {
+      const t = ing.trim();
+      if (t && !existing.has(t.toLowerCase())) {
+        newItems.push({ id: Date.now() + Math.random() + added, text: t, checked: false });
+        existing.add(t.toLowerCase());
+        added++;
+      }
+    }
+    if (newItems.length > 0) {
+      setLista((prev) => [...prev, ...newItems]);
+      showToast(added + " producto" + (added > 1 ? "s" : "") + " agregado" + (added > 1 ? "s" : "") + " a la lista \u2713");
+    } else {
+      showToast("Ya están todos en la lista");
+    }
+  };
   const totalItems = cart.reduce((a, c) => a + c.qty, 0);
 
   const accentColor = category === "super" ? "#ea580c" : "#2563eb";
@@ -896,9 +1065,11 @@ export default function SuperMamu() {
       {/* ═══ TAB BAR — Supermercado ═══ */}
       {category === "super" && (
         <div style={S.tabBar}>
-          {[["buscar","\uD83D\uDD0D","Buscar"],["menu","\uD83E\uDD16","Menú IA"],["carrito","\uD83D\uDED2","Carrito"],["config","\u2699\uFE0F","Config"]].map(([id,icon,label]) => (
-            <button key={id} style={{ ...S.tabItem, ...(tab === id ? { color: "#ea580c" } : {}) }} onClick={() => setTab(id)}>
-              <span style={{ fontSize: 18 }}>{icon}</span><span style={{ fontSize: 10, marginTop: 2 }}>{label}</span>
+          {[["buscar","\uD83D\uDD0D","Buscar"],["menu","\uD83E\uDD16","Menú IA"],["lista","\uD83D\uDCDD","Lista"],["config","\u2699\uFE0F","Config"]].map(([id,icon,label]) => (
+            <button key={id} style={{ ...S.tabItem, ...(tab === id ? { color: "#ea580c" } : {}), position: "relative" }} onClick={() => setTab(id)}>
+              <span style={{ fontSize: 18 }}>{icon}</span>
+              {id === "lista" && lista.filter((l) => !l.checked).length > 0 && <span style={{ ...S.cartBadge, position: "absolute", top: 4, right: "calc(50% - 18px)", fontSize: 9, padding: "0px 5px", minWidth: 16 }}>{lista.filter((l) => !l.checked).length}</span>}
+              <span style={{ fontSize: 10, marginTop: 2 }}>{label}</span>
             </button>
           ))}
         </div>
@@ -930,11 +1101,12 @@ export default function SuperMamu() {
             {!scannerActive && !searching && searchStep === "idle" && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16, justifyContent: "center" }}>{["leche entera","aceite girasol","arroz largo","fideos spaghetti","harina 000"].map((s) => <button key={s} style={S.suggestionChip} onClick={() => doSearchOptions(s)}>{s}</button>)}</div>}
             {searching && <div style={S.emptyState}><div style={S.spinner} /><div style={{ marginTop: 16, fontSize: 14, color: "#78716c" }}>{searchStep === "comparing" ? "Comparando precios en 7 supermercados..." : "Buscando productos..."}</div></div>}
             {!searching && searchStep === "options" && productOptions.length > 0 && <ProductOptionsList options={productOptions} onSelect={selectProduct} onBack={resetSearch} />}
-            {!searching && searchStep === "comparing" && comparisonResult && <PriceCard result={comparisonResult} productName={selectedProduct?.nombre} productImage={selectedProduct?.imagen} onAddToCart={addToCart} onBack={productOptions.length > 1 ? goBackToOptions : resetSearch} />}
+            {!searching && searchStep === "comparing" && comparisonResult && <PriceCard result={comparisonResult} productName={selectedProduct?.nombre} productImage={selectedProduct?.imagen} onAddToCart={addToCart} onAddToLista={addToLista} onBack={productOptions.length > 1 ? goBackToOptions : resetSearch} />}
             {!searching && searchStep === "idle" && !scannerActive && <div style={S.emptyState}><div style={{ fontSize: 56, marginBottom: 12 }}>{"\uD83D\uDD0D"}</div><div style={{ fontWeight: 600 }}>Buscá o escaneá un producto</div><div style={{ fontSize: 13, color: "#a3a3a3", marginTop: 4, maxWidth: 260, lineHeight: 1.5, margin: "4px auto 0" }}>Escribí el nombre, un código EAN, o tocá {"\uD83D\uDCF7"} para escanear</div></div>}
           </div>
         )}
-        {category === "super" && tab === "menu" && <MenuIA setTab={setTab} onSearchProduct={(q) => { setQuery(q); setTab("buscar"); setTimeout(() => doSearchOptions(q), 100); }} menuStep={menuStep} setMenuStep={setMenuStep} menuResult={menuResult} setMenuResult={setMenuResult} />}
+        {category === "super" && tab === "menu" && <MenuIA setTab={setTab} onSearchProduct={(q) => { setQuery(q); setTab("buscar"); setTimeout(() => doSearchOptions(q), 100); }} menuStep={menuStep} setMenuStep={setMenuStep} menuResult={menuResult} setMenuResult={setMenuResult} onAddToLista={addToLista} onAddAllToLista={addAllIngredientsToLista} />}
+        {category === "super" && tab === "lista" && <ListaView lista={lista} setLista={setLista} />}
         {category === "super" && tab === "carrito" && <CartView cart={cart} setCart={setCart} />}
         {category === "super" && tab === "config" && <ConfigView />}
 
@@ -1051,4 +1223,9 @@ const S = {
 
   // SUBE links
   subeLink: { display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", background: "#fff", border: "1px solid #e7e5e4", borderRadius: 14, textDecoration: "none", color: "#171717", fontFamily: "'DM Sans', sans-serif" },
+
+  // Lista de compras
+  listaItem: { display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: "#fff", border: "1px solid #e7e5e4", borderRadius: 12, animation: "slideUp 0.15s ease" },
+  listaCheck: { border: "none", background: "transparent", padding: 0, cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center" },
+  listaRemove: { border: "none", background: "transparent", color: "#d6d3d1", fontSize: 14, cursor: "pointer", padding: "4px 6px", flexShrink: 0 },
 };
