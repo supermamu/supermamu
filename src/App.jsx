@@ -331,8 +331,23 @@ function MenuIA({ setTab, onSearchProduct, menuStep, setMenuStep, menuResult, se
 }
 
 /* ═══════ LISTA DE COMPRAS VIEW ═══════ */
-function ListaView({ lista, setLista }) {
+const LISTA_PRESETS = [
+  { id: "cumple", icon: "\uD83C\uDF82", label: "Cumpleaños", prompt: "lista de compras para un cumpleaños en casa para 15-20 personas, incluyendo bebidas, snacks, decoración y descartables" },
+  { id: "picada", icon: "\uD83E\uDDC0", label: "Picada", prompt: "lista de compras para armar una picada completa para 6-8 personas, con fiambres, quesos, pan, aceitunas, frutos secos y acompañamientos" },
+  { id: "asado", icon: "\uD83E\uDD69", label: "Asado", prompt: "lista de compras para un asado completo para 10 personas, incluyendo carnes, carbón, chimichurri, ensaladas, pan y bebidas" },
+  { id: "limpieza", icon: "\uD83E\uDDF9", label: "Limpieza", prompt: "lista completa de productos de limpieza para el hogar: cocina, baño, pisos, ropa, vidrios y desinfección" },
+  { id: "baño", icon: "\uD83D\uDEC1", label: "Baño", prompt: "lista de productos de higiene y baño para una familia: shampoo, jabón, pasta dental, papel higiénico, toallas y accesorios" },
+  { id: "utiles", icon: "\u270F\uFE0F", label: "Útiles escolares", prompt: "lista de útiles escolares completa para un estudiante de primaria/secundaria en Argentina" },
+  { id: "bebe", icon: "\uD83D\uDC76", label: "Bebé", prompt: "lista de productos esenciales para un bebé: pañales, toallitas, cremas, leche, mamaderas y artículos de higiene" },
+  { id: "mudanza", icon: "\uD83D\uDCE6", label: "Mudanza", prompt: "lista de cosas que necesitás comprar para una mudanza y primera instalación en un departamento nuevo" },
+];
+
+function ListaView({ lista, setLista, onSearchProduct }) {
   const [newItem, setNewItem] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [showPresets, setShowPresets] = useState(false);
+  const [customPrompt, setCustomPrompt] = useState("");
+  const [aiError, setAiError] = useState(null);
 
   const toggleCheck = (id) => {
     setLista((prev) => prev.map((item) => item.id === id ? { ...item, checked: !item.checked } : item));
@@ -354,26 +369,139 @@ function ListaView({ lista, setLista }) {
     setLista((prev) => prev.filter((item) => !item.checked));
   };
 
+  const handleSearchItem = (text) => {
+    const searchTerm = text.split("(")[0].replace(/\d+\s*(kg|g|l|ml|unidad|un|lt|cc|pares?|packs?|rollos?|cajas?|sobres?|metros?|cm|mm|u\.?)\b/gi, "").replace(/x\s*\d+/gi, "").trim();
+    if (searchTerm && onSearchProduct) onSearchProduct(searchTerm);
+  };
+
+  const generateAIList = async (promptText) => {
+    setAiLoading(true); setAiError(null); setShowPresets(false);
+    try {
+      const resp = await fetch(AI_PROXY, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "arcee-ai/trinity-large-preview:free",
+          messages: [
+            { role: "system", content: "Sos un asistente de compras argentino. Respondés ÚNICAMENTE con JSON válido. Sin texto, sin markdown, sin backticks, solo JSON." },
+            { role: "user", content: "Generá una " + promptText + ".\n\nReglas:\n- Productos REALES que se compran en supermercado/comercio argentino\n- Nombres comerciales argentinos cuando sea posible (ej: \"Lavandina Ayudín 1L\")\n- Incluí cantidades aproximadas\n- NO repitas productos\n- Entre 10 y 25 productos\n\nRespondé ÚNICAMENTE con JSON:\n{\"titulo\":\"nombre de la lista\",\"items\":[\"producto 1 con cantidad\",\"producto 2 con cantidad\"]}" }
+          ],
+          max_tokens: 2048,
+          temperature: 0.7,
+        }),
+      });
+      if (!resp.ok) throw new Error("Error " + resp.status);
+      const rawText = await resp.text();
+      if (!rawText?.trim()) throw new Error("Respuesta vacía.");
+      let data; try { data = JSON.parse(rawText); } catch { throw new Error("Respuesta inválida."); }
+      let content = data.choices?.[0]?.message?.content || "";
+      if (!content?.trim()) throw new Error("Sin contenido.");
+      content = content.replace(/```json\s*/gi, "").replace(/```\s*/gi, "").trim();
+      const js = content.indexOf("{"), je = content.lastIndexOf("}");
+      if (js === -1 || je === -1) throw new Error("JSON inválido.");
+      content = content.slice(js, je + 1);
+      let parsed;
+      try { parsed = JSON.parse(content); } catch { try { parsed = JSON.parse(content.replace(/,\s*([}\]])/g, "$1")); } catch { throw new Error("JSON incompleto."); } }
+      const items = parsed.items || parsed.productos || parsed.ingredientes || [];
+      if (!items.length) throw new Error("Lista vacía.");
+      // Add items avoiding duplicates
+      const existing = new Set(lista.map((l) => l.text.toLowerCase()));
+      const newItems = [];
+      for (const item of items) {
+        const t = item.trim();
+        if (t && !existing.has(t.toLowerCase())) {
+          newItems.push({ id: Date.now() + Math.random() + newItems.length, text: t, checked: false });
+          existing.add(t.toLowerCase());
+        }
+      }
+      if (newItems.length > 0) {
+        setLista((prev) => [...prev, ...newItems]);
+      }
+    } catch (e) {
+      setAiError(e.message || "Error generando la lista");
+    }
+    setAiLoading(false);
+  };
+
   const checkedCount = lista.filter((l) => l.checked).length;
   const uncheckedCount = lista.length - checkedCount;
 
+  // ── AI Loading state ──
+  if (aiLoading) {
+    return (
+      <div style={S.emptyState}>
+        <div style={S.spinner} />
+        <div style={{ marginTop: 16, fontWeight: 600 }}>Generando lista con IA...</div>
+        <div style={{ fontSize: 13, color: "#a3a3a3", marginTop: 4 }}>Esto puede tardar unos segundos</div>
+      </div>
+    );
+  }
+
+  // ── Presets panel ──
+  if (showPresets) {
+    return (
+      <div style={{ animation: "slideUp 0.25s ease" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+          <button style={S.btnBack} onClick={() => setShowPresets(false)}>{"\u2190"} Volver</button>
+          <h3 style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Fredoka', sans-serif", margin: 0 }}>{"\u2728"} Generar lista con IA</h3>
+        </div>
+
+        {aiError && <div style={S.errorBox}>{aiError}</div>}
+
+        <div style={{ fontSize: 13, color: "#57534e", marginBottom: 12 }}>Elegí un tipo de lista o escribí tu propia:</div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
+          {LISTA_PRESETS.map((preset) => (
+            <button key={preset.id} style={S.presetBtn} onClick={() => generateAIList(preset.prompt)}>
+              <span style={{ fontSize: 24 }}>{preset.icon}</span>
+              <span style={{ flex: 1, textAlign: "left", fontWeight: 600, fontSize: 14 }}>{preset.label}</span>
+              <span style={{ color: "#ea580c", fontSize: 14 }}>{"\u2728"}</span>
+            </button>
+          ))}
+        </div>
+
+        <div style={{ borderTop: "1px solid #e7e5e4", paddingTop: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, fontFamily: "'Fredoka', sans-serif" }}>{"\uD83D\uDCAC"} O describí tu lista</div>
+          <input
+            style={S.input}
+            value={customPrompt}
+            onChange={(e) => setCustomPrompt(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && customPrompt.trim() && generateAIList("lista de compras para: " + customPrompt.trim())}
+            placeholder='Ej: "merienda para 30 chicos", "camping 3 días"...'
+          />
+          <button
+            style={{ ...S.btnPrimary, width: "100%", marginTop: 10, opacity: customPrompt.trim() ? 1 : 0.5 }}
+            onClick={() => customPrompt.trim() && generateAIList("lista de compras para: " + customPrompt.trim())}
+            disabled={!customPrompt.trim()}
+          >{"\u2728"} Generar lista personalizada</button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Empty state ──
   if (!lista.length) {
     return (
       <div>
         <div style={S.emptyState}>
           <div style={{ fontSize: 56, marginBottom: 12 }}>{"\uD83D\uDCDD"}</div>
           <div style={{ fontWeight: 600 }}>Tu lista está vacía</div>
-          <div style={{ fontSize: 13, color: "#a3a3a3", marginTop: 4, maxWidth: 260, margin: "4px auto 0", lineHeight: 1.5 }}>
-            Agregá productos desde la búsqueda, el menú semanal, o escribilos acá abajo
+          <div style={{ fontSize: 13, color: "#a3a3a3", marginTop: 4, maxWidth: 280, margin: "4px auto 0", lineHeight: 1.5 }}>
+            Agregá productos manualmente, desde la búsqueda, o generá una lista con IA
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+
+        <button style={{ ...S.btnPrimary, width: "100%", marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} onClick={() => setShowPresets(true)}>
+          <span>{"\u2728"}</span> Generar lista con IA
+        </button>
+
+        <div style={{ display: "flex", gap: 8 }}>
           <input
             style={S.searchInput}
             value={newItem}
             onChange={(e) => setNewItem(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && addManualItem()}
-            placeholder="Agregar producto..."
+            placeholder="O agregá un producto..."
           />
           <button style={S.searchBtn} onClick={addManualItem}>+</button>
         </div>
@@ -381,6 +509,7 @@ function ListaView({ lista, setLista }) {
     );
   }
 
+  // ── Main list view ──
   return (
     <div>
       {/* Header */}
@@ -389,15 +518,20 @@ function ListaView({ lista, setLista }) {
           <h3 style={{ fontSize: 18, fontWeight: 800, fontFamily: "'Fredoka', sans-serif", margin: 0 }}>{"\uD83D\uDCDD"} Lista de Compras</h3>
           <div style={{ fontSize: 12, color: "#78716c", marginTop: 2 }}>
             {uncheckedCount} pendiente{uncheckedCount !== 1 ? "s" : ""}
-            {checkedCount > 0 && ` · ${checkedCount} listo${checkedCount !== 1 ? "s" : ""}`}
+            {checkedCount > 0 && ` \u00B7 ${checkedCount} listo${checkedCount !== 1 ? "s" : ""}`}
           </div>
         </div>
-        {checkedCount > 0 && (
-          <button style={{ ...S.btnSmall, color: "#dc2626", fontSize: 12 }} onClick={clearChecked}>
-            {"\uD83D\uDDD1\uFE0F"} Quitar listos ({checkedCount})
-          </button>
-        )}
+        <div style={{ display: "flex", gap: 6 }}>
+          <button style={{ ...S.btnSmall, fontSize: 12 }} onClick={() => setShowPresets(true)}>{"\u2728"} IA</button>
+          {checkedCount > 0 && (
+            <button style={{ ...S.btnSmall, color: "#dc2626", fontSize: 12 }} onClick={clearChecked}>
+              {"\uD83D\uDDD1\uFE0F"} ({checkedCount})
+            </button>
+          )}
+        </div>
       </div>
+
+      {aiError && <div style={S.errorBox}>{aiError}</div>}
 
       {/* Add item */}
       <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
@@ -415,13 +549,11 @@ function ListaView({ lista, setLista }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {lista.filter((l) => !l.checked).map((item) => (
           <div key={item.id} style={S.listaItem}>
-            <button
-              style={S.listaCheck}
-              onClick={() => toggleCheck(item.id)}
-            >
+            <button style={S.listaCheck} onClick={() => toggleCheck(item.id)}>
               <span style={{ width: 22, height: 22, borderRadius: 6, border: "2px solid #d6d3d1", display: "flex", alignItems: "center", justifyContent: "center", background: "#fff" }} />
             </button>
-            <span style={{ flex: 1, fontSize: 14, fontWeight: 500 }}>{item.text}</span>
+            <span style={{ flex: 1, fontSize: 14, fontWeight: 500, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{item.text}</span>
+            <button style={S.listaSearchBtn} onClick={() => handleSearchItem(item.text)} title="Buscar en supermercados">{"\uD83D\uDD0D"}</button>
             <button style={S.listaRemove} onClick={() => removeItem(item.id)}>{"\u2715"}</button>
           </div>
         ))}
@@ -436,10 +568,7 @@ function ListaView({ lista, setLista }) {
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             {lista.filter((l) => l.checked).map((item) => (
               <div key={item.id} style={{ ...S.listaItem, opacity: 0.6, background: "#f5f5f4" }}>
-                <button
-                  style={S.listaCheck}
-                  onClick={() => toggleCheck(item.id)}
-                >
+                <button style={S.listaCheck} onClick={() => toggleCheck(item.id)}>
                   <span style={{ width: 22, height: 22, borderRadius: 6, border: "2px solid #15803d", display: "flex", alignItems: "center", justifyContent: "center", background: "#dcfce7", color: "#15803d", fontSize: 14, fontWeight: 700 }}>{"\u2713"}</span>
                 </button>
                 <span style={{ flex: 1, fontSize: 14, fontWeight: 500, textDecoration: "line-through", color: "#a3a3a3" }}>{item.text}</span>
@@ -1106,7 +1235,7 @@ export default function SuperMamu() {
           </div>
         )}
         {category === "super" && tab === "menu" && <MenuIA setTab={setTab} onSearchProduct={(q) => { setQuery(q); setTab("buscar"); setTimeout(() => doSearchOptions(q), 100); }} menuStep={menuStep} setMenuStep={setMenuStep} menuResult={menuResult} setMenuResult={setMenuResult} onAddToLista={addToLista} onAddAllToLista={addAllIngredientsToLista} />}
-        {category === "super" && tab === "lista" && <ListaView lista={lista} setLista={setLista} />}
+        {category === "super" && tab === "lista" && <ListaView lista={lista} setLista={setLista} onSearchProduct={(q) => { setQuery(q); setTab("buscar"); setTimeout(() => doSearchOptions(q), 100); }} />}
         {category === "super" && tab === "carrito" && <CartView cart={cart} setCart={setCart} />}
         {category === "super" && tab === "config" && <ConfigView />}
 
@@ -1228,4 +1357,6 @@ const S = {
   listaItem: { display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: "#fff", border: "1px solid #e7e5e4", borderRadius: 12, animation: "slideUp 0.15s ease" },
   listaCheck: { border: "none", background: "transparent", padding: 0, cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center" },
   listaRemove: { border: "none", background: "transparent", color: "#d6d3d1", fontSize: 14, cursor: "pointer", padding: "4px 6px", flexShrink: 0 },
+  listaSearchBtn: { border: "1px solid #e7e5e4", background: "#fff", borderRadius: 8, padding: "4px 8px", cursor: "pointer", fontSize: 13, flexShrink: 0, color: "#ea580c" },
+  presetBtn: { display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", background: "#fff", border: "1px solid #e7e5e4", borderRadius: 14, cursor: "pointer", width: "100%", fontFamily: "'DM Sans', sans-serif", transition: "border-color 0.15s" },
 };
