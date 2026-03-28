@@ -259,6 +259,37 @@ function MenuIA({ setTab, onSearchProduct, menuStep, setMenuStep, menuResult, se
   const [restricciones, setRestricciones] = useState("");
   const [presupuesto, setPresupuesto] = useState("moderado");
   const [error, setError] = useState(null);
+  const [mode, setMode] = useState("menu"); // "menu" or "recetas"
+  const [recetaQuery, setRecetaQuery] = useState("");
+  const [recetaResult, setRecetaResult] = useState(null);
+  const [recetaLoading, setRecetaLoading] = useState(false);
+
+  const generateReceta = async (q) => {
+    const trimmed = (q || recetaQuery || "").trim();
+    if (!trimmed) return;
+    setRecetaLoading(true); setError(null); setRecetaResult(null);
+    try {
+      const prompt = "Sos un chef argentino experto en cocina casera. Generá una receta completa para: " + trimmed + ".\n\nReglas:\n- Receta práctica, con ingredientes que se consiguen en cualquier supermercado argentino\n- Cantidades para 4 personas\n- Pasos claros y numerados\n- Ingredientes con cantidades exactas\n- Nombres de productos argentinos cuando sea posible\n\nRespondé ÚNICAMENTE con JSON válido:\n{\"nombre\":\"nombre del plato\",\"porciones\":4,\"tiempo\":\"tiempo de preparación\",\"dificultad\":\"Fácil|Media|Difícil\",\"ingredientes\":[\"ingrediente con cantidad\"],\"pasos\":[\"paso 1\",\"paso 2\"],\"tip\":\"un consejo útil\"}";
+      const resp = await fetch(AI_PROXY, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "arcee-ai/trinity-large-preview:free", messages: [{ role: "system", content: "Respondés ÚNICAMENTE con JSON válido. Sin texto, sin markdown, solo JSON." }, { role: "user", content: prompt }], max_tokens: 2048, temperature: 0.7 }),
+      });
+      if (!resp.ok) throw new Error("Error " + resp.status);
+      const rawText = await resp.text();
+      let data; try { data = JSON.parse(rawText); } catch { throw new Error("Respuesta inválida."); }
+      let content = data.choices?.[0]?.message?.content || "";
+      if (!content?.trim()) throw new Error("Sin contenido.");
+      content = content.replace(/```json\s*/gi, "").replace(/```\s*/gi, "").trim();
+      const js = content.indexOf("{"), je = content.lastIndexOf("}");
+      if (js === -1 || je === -1) throw new Error("JSON inválido.");
+      content = content.slice(js, je + 1);
+      let parsed; try { parsed = JSON.parse(content); } catch { try { parsed = JSON.parse(content.replace(/,\s*([}\]])/g, "$1")); } catch { throw new Error("JSON incompleto."); } }
+      if (!parsed.nombre || !parsed.ingredientes) throw new Error("Receta inválida.");
+      setRecetaResult(parsed);
+    } catch (e) { setError(e.message); }
+    setRecetaLoading(false);
+  };
 
   const generateMenu = async () => {
     setMenuStep("loading"); setError(null);
@@ -337,12 +368,105 @@ function MenuIA({ setTab, onSearchProduct, menuStep, setMenuStep, menuResult, se
 
   return (
     <div>
-      <div style={S.aiHero}><div style={{ fontSize: 48, marginBottom: 8 }}>{"\uD83E\uDD16"}</div><h3 style={{ fontSize: 20, fontWeight: 800, fontFamily: "'Fredoka', sans-serif", marginBottom: 4 }}>Menú Semanal con IA</h3><p style={{ fontSize: 13, color: "#78716c", maxWidth: 280, margin: "0 auto" }}>Generá un menú personalizado y buscá los mejores precios</p></div>
-      {error && <div style={S.errorBox}>{error}</div>}
-      <div style={S.formGroup}><label style={S.formLabel}>{"\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67\u200D\uD83D\uDC66"} ¿Para cuántas personas?</label><div style={{ display: "flex", gap: 8 }}>{["1","2","3","4","5","6"].map((n) => <button key={n} style={{ ...S.chipBtn, ...(personas === n ? S.chipBtnActive : {}) }} onClick={() => setPersonas(n)}>{n}</button>)}</div></div>
-      <div style={S.formGroup}><label style={S.formLabel}>{"\uD83D\uDCB0"} Presupuesto</label><div style={{ display: "flex", gap: 8 }}>{[["económico","Económico"],["moderado","Moderado"],["sin límite","Sin límite"]].map(([v,l]) => <button key={v} style={{ ...S.chipBtn, flex: 1, ...(presupuesto === v ? S.chipBtnActive : {}) }} onClick={() => setPresupuesto(v)}>{l}</button>)}</div></div>
-      <div style={S.formGroup}><label style={S.formLabel}>{"\uD83E\uDD57"} Restricciones (opcional)</label><input style={S.input} value={restricciones} onChange={(e) => setRestricciones(e.target.value)} placeholder="Ej: sin gluten, vegetariano..." /></div>
-      <button style={{ ...S.btnPrimary, width: "100%", padding: "16px 24px", fontSize: 16, marginTop: 8 }} onClick={generateMenu}>{"\u2728"} Generar mi menú semanal</button>
+      {/* Mode tabs */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <button style={{ ...S.chipBtn, flex: 1, ...(mode === "menu" ? S.chipBtnActive : {}) }} onClick={() => setMode("menu")}>{"\uD83E\uDD16"} Menú Semanal</button>
+        <button style={{ ...S.chipBtn, flex: 1, ...(mode === "recetas" ? S.chipBtnActive : {}) }} onClick={() => setMode("recetas")}>{"\uD83C\uDF7D\uFE0F"} Recetas</button>
+      </div>
+
+      {mode === "menu" && (
+        <div>
+          <div style={S.aiHero}><div style={{ fontSize: 48, marginBottom: 8 }}>{"\uD83E\uDD16"}</div><h3 style={{ fontSize: 20, fontWeight: 800, fontFamily: "'Fredoka', sans-serif", marginBottom: 4 }}>Menú Semanal con IA</h3><p style={{ fontSize: 13, color: "#78716c", maxWidth: 280, margin: "0 auto" }}>Generá un menú personalizado y buscá los mejores precios</p></div>
+          {error && mode === "menu" && <div style={S.errorBox}>{error}</div>}
+          <div style={S.formGroup}><label style={S.formLabel}>{"\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67\u200D\uD83D\uDC66"} ¿Para cuántas personas?</label><div style={{ display: "flex", gap: 8 }}>{["1","2","3","4","5","6"].map((n) => <button key={n} style={{ ...S.chipBtn, ...(personas === n ? S.chipBtnActive : {}) }} onClick={() => setPersonas(n)}>{n}</button>)}</div></div>
+          <div style={S.formGroup}><label style={S.formLabel}>{"\uD83D\uDCB0"} Presupuesto</label><div style={{ display: "flex", gap: 8 }}>{[["económico","Económico"],["moderado","Moderado"],["sin límite","Sin límite"]].map(([v,l]) => <button key={v} style={{ ...S.chipBtn, flex: 1, ...(presupuesto === v ? S.chipBtnActive : {}) }} onClick={() => setPresupuesto(v)}>{l}</button>)}</div></div>
+          <div style={S.formGroup}><label style={S.formLabel}>{"\uD83E\uDD57"} Restricciones (opcional)</label><input style={S.input} value={restricciones} onChange={(e) => setRestricciones(e.target.value)} placeholder="Ej: sin gluten, vegetariano..." /></div>
+          <button style={{ ...S.btnPrimary, width: "100%", padding: "16px 24px", fontSize: 16, marginTop: 8 }} onClick={generateMenu}>{"\u2728"} Generar mi menú semanal</button>
+        </div>
+      )}
+
+      {mode === "recetas" && (
+        <div>
+          {!recetaResult && !recetaLoading && (
+            <div>
+              <div style={S.aiHero}><div style={{ fontSize: 48, marginBottom: 8 }}>{"\uD83C\uDF7D\uFE0F"}</div><h3 style={{ fontSize: 20, fontWeight: 800, fontFamily: "'Fredoka', sans-serif", marginBottom: 4 }}>Recetas con IA</h3><p style={{ fontSize: 13, color: "#78716c", maxWidth: 280, margin: "0 auto" }}>Buscá una receta y agregá los ingredientes a tu lista</p></div>
+              {error && mode === "recetas" && <div style={S.errorBox}>{error}</div>}
+              <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+                <div style={{ flex: 1, position: "relative" }}>
+                  <input style={{ ...S.searchInput, paddingRight: 36, width: "100%" }} value={recetaQuery} onChange={(e) => setRecetaQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && generateReceta()} placeholder='Ej: "milanesas napolitanas"' />
+                  {recetaQuery && <button style={S.clearBtn} onClick={() => setRecetaQuery("")} type="button">{"\u2715"}</button>}
+                </div>
+                <button style={S.searchBtn} onClick={() => generateReceta()}>{"\uD83C\uDF7D\uFE0F"}</button>
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center" }}>
+                {["milanesas napolitanas","empanadas de carne","ñoquis con tuco","tarta de zapallitos","pollo al horno","fideos con salsa blanca","guiso de lentejas","pizza casera","tortilla de papa","ensalada César"].map((r) => (
+                  <button key={r} style={S.suggestionChip} onClick={() => { setRecetaQuery(r); generateReceta(r); }}>{r}</button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {recetaLoading && (
+            <div style={S.emptyState}><div style={S.spinner} /><div style={{ marginTop: 16, fontWeight: 600 }}>Cocinando tu receta...</div><div style={{ fontSize: 13, color: "#a3a3a3", marginTop: 4 }}>La IA está preparando los ingredientes y pasos</div></div>
+          )}
+
+          {recetaResult && (
+            <div style={{ animation: "slideUp 0.25s ease" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <h3 style={{ fontSize: 18, fontWeight: 800, fontFamily: "'Fredoka', sans-serif", margin: 0 }}>{"\uD83C\uDF7D\uFE0F"} {recetaResult.nombre}</h3>
+                <button style={S.btnSmall} onClick={() => { setRecetaResult(null); setError(null); }}>{"\u2190"} Otra</button>
+              </div>
+
+              {/* Meta info */}
+              <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+                {recetaResult.porciones && <span style={{ ...S.cartChip, padding: "4px 10px" }}>{"\uD83D\uDC65"} {recetaResult.porciones} porciones</span>}
+                {recetaResult.tiempo && <span style={{ ...S.cartChip, padding: "4px 10px" }}>{"\u23F1\uFE0F"} {recetaResult.tiempo}</span>}
+                {recetaResult.dificultad && <span style={{ ...S.cartChip, padding: "4px 10px" }}>{recetaResult.dificultad === "Fácil" ? "\uD83D\uDFE2" : recetaResult.dificultad === "Media" ? "\uD83D\uDFE1" : "\uD83D\uDD34"} {recetaResult.dificultad}</span>}
+              </div>
+
+              {/* Ingredients */}
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <h4 style={{ fontSize: 15, fontWeight: 700, fontFamily: "'Fredoka', sans-serif", margin: 0 }}>{"\uD83E\uDD66"} Ingredientes</h4>
+                  {onAddAllToLista && recetaResult.ingredientes?.length > 0 && (
+                    <button style={{ ...S.btnSmall, color: "#ea580c", fontWeight: 600, fontSize: 12 }} onClick={() => onAddAllToLista(recetaResult.ingredientes)}>{"\uD83D\uDCDD"} Agregar todo</button>
+                  )}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  {recetaResult.ingredientes?.map((ing, i) => (
+                    <div key={i} style={{ display: "flex", gap: 4 }}>
+                      <button style={{ ...S.ingredientBtn, flex: 1 }} onClick={() => { const s = ing.split("(")[0].replace(/\d+\s*(kg|g|l|ml|unidad|un|lt|cc)\b/gi, "").trim(); onSearchProduct(s); }}>
+                        <span style={{ flex: 1, textAlign: "left" }}>{ing}</span>
+                        <span style={{ color: "#ea580c", fontSize: 13, flexShrink: 0 }}>{"\uD83D\uDD0D"}</span>
+                      </button>
+                      {onAddToLista && (
+                        <button style={{ ...S.addStoreBtn, borderColor: "#ea580c", width: 36, height: "auto" }} onClick={() => onAddToLista(ing)}>{"\uD83D\uDCDD"}</button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Steps */}
+              {recetaResult.pasos && (
+                <div style={{ marginBottom: 16 }}>
+                  <h4 style={{ fontSize: 15, fontWeight: 700, fontFamily: "'Fredoka', sans-serif", marginBottom: 8 }}>{"\uD83D\uDC68\u200D\uD83C\uDF73"} Preparación</h4>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {recetaResult.pasos.map((paso, i) => (
+                      <div key={i} style={{ ...S.card, padding: 12, display: "flex", gap: 10, alignItems: "flex-start" }}>
+                        <span style={{ width: 26, height: 26, borderRadius: "50%", background: "#ea580c", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, flexShrink: 0, fontFamily: "'Fredoka', sans-serif" }}>{i + 1}</span>
+                        <div style={{ fontSize: 13, lineHeight: 1.6, color: "#57534e" }}>{paso}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {recetaResult.tip && <div style={S.tipBox}>{"\uD83D\uDCA1"} <strong>Tip:</strong> {recetaResult.tip}</div>}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -409,6 +533,17 @@ function ListaView({ listas, setListas, activeListaId, setActiveListaId, lista, 
 
   const clearChecked = () => {
     setLista((prev) => prev.filter((item) => !item.checked));
+  };
+
+  const shareWhatsApp = () => {
+    const listName = activeLista?.name || "Lista";
+    const pending = lista.filter((l) => !l.checked);
+    const done = lista.filter((l) => l.checked);
+    let text = "\uD83D\uDCDD *" + listName + "* (SuperMamu)\n\n";
+    if (pending.length) { text += pending.map((l) => "\u2B1C " + l.text).join("\n") + "\n"; }
+    if (done.length) { text += "\n" + done.map((l) => "\u2705 ~" + l.text + "~").join("\n") + "\n"; }
+    text += "\n\uD83D\uDED2 supermamu.com.ar";
+    window.open("https://wa.me/?text=" + encodeURIComponent(text), "_blank");
   };
 
   const handleSearchItem = (text) => {
@@ -633,6 +768,7 @@ function ListaView({ listas, setListas, activeListaId, setActiveListaId, lista, 
         </div>
         <div style={{ display: "flex", gap: 6 }}>
           <button style={{ ...S.btnSmall, fontSize: 12 }} onClick={() => setShowPresets(true)}>{"\u2728"} IA</button>
+          {lista.length > 0 && <button style={{ ...S.btnSmall, fontSize: 12, color: "#25d366" }} onClick={shareWhatsApp}>{"\uD83D\uDCE4"}</button>}
           {checkedCount > 0 && (
             <button style={{ ...S.btnSmall, color: "#dc2626", fontSize: 12 }} onClick={clearChecked}>
               {"\uD83D\uDDD1\uFE0F"} ({checkedCount})
@@ -1462,14 +1598,36 @@ function FarmaciaView() {
 }
 
 /* ═══════ CONFIG VIEW ═══════ */
-function ConfigView() {
+function ConfigView({ darkMode, setDarkMode }) {
   return (
     <div>
       <div style={S.aiHero}><div style={{ fontSize: 48, marginBottom: 8 }}>{"\u2699\uFE0F"}</div><h3 style={{ fontSize: 20, fontWeight: 800, fontFamily: "'Fredoka', sans-serif" }}>Configuración</h3></div>
+
+      {/* Dark mode toggle */}
+      <div style={{ ...S.card, padding: 16, marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 22 }}>{darkMode ? "\uD83C\uDF19" : "\u2600\uFE0F"}</span>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>Modo oscuro</div>
+            <div style={{ fontSize: 12, color: "#78716c" }}>{darkMode ? "Activado" : "Desactivado"}</div>
+          </div>
+        </div>
+        <button onClick={() => setDarkMode(!darkMode)} style={{
+          width: 52, height: 28, borderRadius: 14, border: "none", cursor: "pointer",
+          background: darkMode ? "#ea580c" : "#d6d3d1", position: "relative", transition: "background 0.3s",
+        }}>
+          <span style={{
+            position: "absolute", top: 3, left: darkMode ? 27 : 3,
+            width: 22, height: 22, borderRadius: "50%", background: "#fff",
+            transition: "left 0.3s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+          }} />
+        </button>
+      </div>
+
       <div style={{ ...S.card, padding: 16 }}>
         <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>{"\uD83D\uDCF1"} Sobre SuperMamu</div>
-        <p style={{ fontSize: 13, color: "#78716c", lineHeight: 1.6 }}>Tu gestor del hogar: compará precios de supermercados, consultá precios de nafta, estado del transporte público y tarifas actualizadas.</p>
-        <div style={{ fontSize: 12, color: "#a3a3a3", marginTop: 12 }}>Menú IA por OpenRouter · Transporte por API BA · v2.0</div>
+        <p style={{ fontSize: 13, color: "#78716c", lineHeight: 1.6 }}>Tu gestor del hogar: compará precios de supermercados, consultá precios de nafta, estado del transporte público, medicamentos y cotizaciones del dólar.</p>
+        <div style={{ fontSize: 12, color: "#a3a3a3", marginTop: 12 }}>Menú IA por OpenRouter · Transporte por API BA · v2.1</div>
       </div>
     </div>
   );
@@ -1480,6 +1638,7 @@ function ConfigView() {
    ═══════════════════════════════════════════════════ */
 export default function SuperMamu() {
   const [category, setCategory] = useState("super");
+  const [darkMode, setDarkMode] = useState(false);
   const [tab, setTab] = useState("buscar");
   const [transporteTab, setTransporteTab] = useState("transporte");
   const [query, setQuery] = useState("");
@@ -1515,10 +1674,12 @@ export default function SuperMamu() {
       }
     } catch {}
     if (!document.getElementById("html5qr-script")) { const s = document.createElement("script"); s.id = "html5qr-script"; s.src = "https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"; s.async = true; document.head.appendChild(s); }
+    try { if (localStorage.getItem("supermamu_dark") === "1") setDarkMode(true); } catch {}
   }, []);
 
   useEffect(() => { if (tab !== "buscar" && scannerActive) stopScanner(); }, [tab, scannerActive]);
   useEffect(() => { try { localStorage.setItem("supermamu_cart", JSON.stringify(cart)); } catch {} }, [cart]);
+  useEffect(() => { try { localStorage.setItem("supermamu_dark", darkMode ? "1" : "0"); document.body.style.background = darkMode ? "#1a1a1a" : "#faf9f6"; } catch {} }, [darkMode]);
   useEffect(() => { try { localStorage.setItem("supermamu_listas_v2", JSON.stringify({ activeId: activeListaId, lists: listas })); } catch {} }, [listas, activeListaId]);
 
   const showToast = useCallback((msg) => { setToast(msg); setTimeout(() => setToast(null), 2500); }, []);
@@ -1635,14 +1796,14 @@ export default function SuperMamu() {
   const accentColor = category === "super" ? "#ea580c" : "#2563eb";
 
   return (
-    <div style={S.app}>
+    <div style={{ ...S.app, ...(darkMode ? S.appDark : {}) }} className={darkMode ? "dark" : ""}>
       <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet" />
 
       {/* ═══ HEADER ═══ */}
-      <div style={S.header}>
+      <div style={{ ...S.header, ...(darkMode ? { background: "#1a1a1a", borderColor: "#333" } : {}) }}>
         <div style={S.logo}>
           <img src="/logo-header.png" alt="SuperMamu" style={{ height: 40, width: 40, borderRadius: 20, marginRight: 8, verticalAlign: "middle" }} />
-          <span style={{ color: "#ea580c" }}>Super</span><span style={{ color: "#171717" }}>Mamu</span>
+          <span style={{ color: "#ea580c" }}>Super</span><span style={{ color: darkMode ? "#e5e5e5" : "#171717" }}>Mamu</span>
         </div>
         {category === "super" && (
           <button style={S.cartHeaderBtn} onClick={() => setTab("carrito")}>{"\uD83D\uDED2"} {totalItems > 0 && <span style={S.cartBadge}>{totalItems}</span>}</button>
@@ -1715,11 +1876,11 @@ export default function SuperMamu() {
         {category === "super" && tab === "menu" && <MenuIA setTab={setTab} onSearchProduct={(q) => { setQuery(q); setTab("buscar"); setTimeout(() => doSearchOptions(q), 100); }} menuStep={menuStep} setMenuStep={setMenuStep} menuResult={menuResult} setMenuResult={setMenuResult} onAddToLista={addToLista} onAddAllToLista={addAllIngredientsToLista} />}
         {category === "super" && tab === "lista" && <ListaView listas={listas} setListas={setListas} activeListaId={activeListaId} setActiveListaId={setActiveListaId} lista={activeListaItems} setLista={setActiveListaItems} onSearchProduct={(q) => { setQuery(q); setTab("buscar"); setTimeout(() => doSearchOptions(q), 100); }} />}
         {category === "super" && tab === "carrito" && <CartView cart={cart} setCart={setCart} />}
-        {category === "super" && tab === "config" && <ConfigView />}
+        {category === "super" && tab === "config" && <ConfigView darkMode={darkMode} setDarkMode={setDarkMode} />}
 
         {/* TRANSPORTE CONTENT */}
         {category === "transporte" && transporteTab === "transporte" && <TransporteView />}
-        {category === "transporte" && transporteTab === "config" && <ConfigView />}
+        {category === "transporte" && transporteTab === "config" && <ConfigView darkMode={darkMode} setDarkMode={setDarkMode} />}
 
         {/* DOLAR CONTENT */}
         {category === "dolar" && <DolarView />}
@@ -1741,6 +1902,25 @@ export default function SuperMamu() {
         button:active{transform:scale(0.97)}
         #mamu-scanner-region video{border-radius:10px!important;object-fit:cover!important;max-height:130px!important}
         #mamu-scanner-region{border-radius:10px!important;overflow:hidden!important;max-height:130px!important}
+        .dark{background:#1a1a1a!important;color:#e5e5e5}
+        .dark div[style*="background: rgb(250"]{background:#1a1a1a!important}
+        .dark div[style*="border-bottom: 1px"]{border-color:#333!important}
+        .dark div[style*="border-top: 1px"]{border-color:#333!important}
+        .dark div[style*="border: 1px solid rgb(231"]{border-color:#333!important;background:#252525!important}
+        .dark div[style*="border: 1.5px solid rgb(231"]{border-color:#444!important;background:#252525!important}
+        .dark div[style*="background: rgb(255, 255, 255)"]{background:#252525!important}
+        .dark div[style*="background: rgb(245, 245, 244)"]{background:#2a2a2a!important}
+        .dark input{background:#252525!important;color:#e5e5e5!important;border-color:#444!important}
+        .dark input::placeholder{color:#666!important}
+        .dark a[style*="background: rgb(255"]{background:#252525!important;border-color:#333!important}
+        .dark span[style*="color: rgb(23, 23, 23)"]{color:#e5e5e5!important}
+        .dark div[style*="color: rgb(23, 23, 23)"]{color:#e5e5e5!important}
+        .dark span[style*="color: rgb(120, 113, 108)"]{color:#888!important}
+        .dark div[style*="color: rgb(120, 113, 108)"]{color:#888!important}
+        .dark span[style*="color: rgb(87, 83, 78)"]{color:#999!important}
+        .dark div[style*="color: rgb(87, 83, 78)"]{color:#999!important}
+        .dark button[style*="background: rgb(245"]{background:#333!important;border-color:#444!important;color:#ccc!important}
+        .dark button[style*="background: rgb(255, 255, 255)"]{background:#252525!important;border-color:#444!important;color:#ccc!important}
       `}</style>
     </div>
   );
@@ -1749,6 +1929,7 @@ export default function SuperMamu() {
 /* ═══════ STYLES ═══════ */
 const S = {
   app: { maxWidth: 480, margin: "0 auto", minHeight: "100vh", background: "#faf9f6", fontFamily: "'DM Sans', system-ui, sans-serif", position: "relative", paddingBottom: 80 },
+  appDark: { background: "#1a1a1a", color: "#e5e5e5" },
   header: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 20px", background: "#faf9f6", borderBottom: "1px solid #e7e5e4", position: "sticky", top: 0, zIndex: 100 },
   logo: { fontFamily: "'Fredoka', sans-serif", fontWeight: 700, fontSize: 22, letterSpacing: -0.5, display: "flex", alignItems: "center" },
   cartHeaderBtn: { background: "#f5f5f4", border: "1px solid #e7e5e4", borderRadius: 12, padding: "8px 14px", fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 },
