@@ -359,12 +359,37 @@ const LISTA_PRESETS = [
   { id: "mudanza", icon: "\uD83D\uDCE6", label: "Mudanza", prompt: "lista de cosas que necesitás comprar para una mudanza y primera instalación en un departamento nuevo" },
 ];
 
-function ListaView({ lista, setLista, onSearchProduct }) {
+function ListaView({ listas, setListas, activeListaId, setActiveListaId, lista, setLista, onSearchProduct }) {
   const [newItem, setNewItem] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [showPresets, setShowPresets] = useState(false);
   const [customPrompt, setCustomPrompt] = useState("");
   const [aiError, setAiError] = useState(null);
+  const [showListManager, setShowListManager] = useState(false);
+  const [editingName, setEditingName] = useState(null);
+  const [editNameValue, setEditNameValue] = useState("");
+
+  const activeLista = listas.find((l) => l.id === activeListaId);
+
+  const createNewList = (name) => {
+    const newId = "list_" + Date.now();
+    const newName = name || "Lista " + (listas.length + 1);
+    setListas((prev) => [...prev, { id: newId, name: newName, items: [] }]);
+    setActiveListaId(newId);
+    setShowListManager(false);
+  };
+
+  const deleteList = (id) => {
+    if (listas.length <= 1) return;
+    setListas((prev) => prev.filter((l) => l.id !== id));
+    if (activeListaId === id) setActiveListaId(listas.find((l) => l.id !== id)?.id || "default");
+  };
+
+  const renameList = (id, newName) => {
+    if (!newName.trim()) return;
+    setListas((prev) => prev.map((l) => l.id === id ? { ...l, name: newName.trim() } : l));
+    setEditingName(null);
+  };
 
   const toggleCheck = (id) => {
     setLista((prev) => prev.map((item) => item.id === id ? { ...item, checked: !item.checked } : item));
@@ -443,13 +468,78 @@ function ListaView({ lista, setLista, onSearchProduct }) {
   const checkedCount = lista.filter((l) => l.checked).length;
   const uncheckedCount = lista.length - checkedCount;
 
+  // ── List selector bar (shown in all states) ──
+  const listSelector = (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 4, alignItems: "center" }}>
+        {listas.map((l) => (
+          <button key={l.id} style={{
+            ...S.chipBtn, whiteSpace: "nowrap", fontSize: 13, padding: "7px 14px",
+            ...(l.id === activeListaId ? S.chipBtnActive : {}),
+          }} onClick={() => setActiveListaId(l.id)}>
+            {l.name}
+            {l.items.filter((i) => !i.checked).length > 0 && <span style={{ marginLeft: 4, fontSize: 10, opacity: 0.7 }}>({l.items.filter((i) => !i.checked).length})</span>}
+          </button>
+        ))}
+        <button style={{ ...S.chipBtn, padding: "7px 12px", fontSize: 16, color: "#ea580c", flexShrink: 0 }} onClick={() => setShowListManager(true)} title="Gestionar listas">+</button>
+      </div>
+    </div>
+  );
+
+  // ── List manager panel ──
+  if (showListManager) {
+    return (
+      <div style={{ animation: "slideUp 0.25s ease" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+          <button style={S.btnBack} onClick={() => setShowListManager(false)}>{"\u2190"} Volver</button>
+          <h3 style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Fredoka', sans-serif", margin: 0 }}>{"\uD83D\uDCCB"} Mis Listas</h3>
+        </div>
+
+        <button style={{ ...S.btnPrimary, width: "100%", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} onClick={() => createNewList()}>
+          + Nueva Lista
+        </button>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {listas.map((l) => (
+            <div key={l.id} style={{ ...S.card, padding: 14, display: "flex", alignItems: "center", gap: 10 }}>
+              {editingName === l.id ? (
+                <div style={{ flex: 1, display: "flex", gap: 6 }}>
+                  <input style={{ ...S.searchInput, padding: "8px 12px", fontSize: 14 }} value={editNameValue} onChange={(e) => setEditNameValue(e.target.value)} onKeyDown={(e) => e.key === "Enter" && renameList(l.id, editNameValue)} autoFocus />
+                  <button style={{ ...S.btnSmall, color: "#15803d", fontSize: 12 }} onClick={() => renameList(l.id, editNameValue)}>{"\u2713"}</button>
+                  <button style={{ ...S.btnSmall, fontSize: 12 }} onClick={() => setEditingName(null)}>{"\u2715"}</button>
+                </div>
+              ) : (
+                <>
+                  <div style={{ flex: 1, cursor: "pointer" }} onClick={() => { setActiveListaId(l.id); setShowListManager(false); }}>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>{l.name}</div>
+                    <div style={{ fontSize: 12, color: "#78716c" }}>
+                      {l.items.length} producto{l.items.length !== 1 ? "s" : ""}
+                      {l.items.filter((i) => i.checked).length > 0 && ` · ${l.items.filter((i) => i.checked).length} listo${l.items.filter((i) => i.checked).length !== 1 ? "s" : ""}`}
+                    </div>
+                  </div>
+                  <button style={{ ...S.btnSmall, fontSize: 11, padding: "5px 10px" }} onClick={() => { setEditingName(l.id); setEditNameValue(l.name); }}>{"\u270F\uFE0F"}</button>
+                  {listas.length > 1 && (
+                    <button style={{ ...S.btnSmall, fontSize: 11, padding: "5px 10px", color: "#dc2626" }} onClick={() => deleteList(l.id)}>{"\uD83D\uDDD1\uFE0F"}</button>
+                  )}
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   // ── AI Loading state ──
   if (aiLoading) {
     return (
-      <div style={S.emptyState}>
-        <div style={S.spinner} />
-        <div style={{ marginTop: 16, fontWeight: 600 }}>Generando lista con IA...</div>
-        <div style={{ fontSize: 13, color: "#a3a3a3", marginTop: 4 }}>Esto puede tardar unos segundos</div>
+      <div>
+        {listSelector}
+        <div style={S.emptyState}>
+          <div style={S.spinner} />
+          <div style={{ marginTop: 16, fontWeight: 600 }}>Generando lista con IA...</div>
+          <div style={{ fontSize: 13, color: "#a3a3a3", marginTop: 4 }}>Esto puede tardar unos segundos</div>
+        </div>
       </div>
     );
   }
@@ -458,6 +548,7 @@ function ListaView({ lista, setLista, onSearchProduct }) {
   if (showPresets) {
     return (
       <div style={{ animation: "slideUp 0.25s ease" }}>
+        {listSelector}
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
           <button style={S.btnBack} onClick={() => setShowPresets(false)}>{"\u2190"} Volver</button>
           <h3 style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Fredoka', sans-serif", margin: 0 }}>{"\u2728"} Generar lista con IA</h3>
@@ -500,6 +591,7 @@ function ListaView({ lista, setLista, onSearchProduct }) {
   if (!lista.length) {
     return (
       <div>
+        {listSelector}
         <div style={S.emptyState}>
           <div style={{ fontSize: 56, marginBottom: 12 }}>{"\uD83D\uDCDD"}</div>
           <div style={{ fontWeight: 600 }}>Tu lista está vacía</div>
@@ -529,10 +621,11 @@ function ListaView({ lista, setLista, onSearchProduct }) {
   // ── Main list view ──
   return (
     <div>
+      {listSelector}
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <div>
-          <h3 style={{ fontSize: 18, fontWeight: 800, fontFamily: "'Fredoka', sans-serif", margin: 0 }}>{"\uD83D\uDCDD"} Lista de Compras</h3>
+          <h3 style={{ fontSize: 18, fontWeight: 800, fontFamily: "'Fredoka', sans-serif", margin: 0 }}>{"\uD83D\uDCDD"} {activeLista?.name || "Lista"}</h3>
           <div style={{ fontSize: 12, color: "#78716c", marginTop: 2 }}>
             {uncheckedCount} pendiente{uncheckedCount !== 1 ? "s" : ""}
             {checkedCount > 0 && ` \u00B7 ${checkedCount} listo${checkedCount !== 1 ? "s" : ""}`}
@@ -703,7 +796,7 @@ function NaftaView() {
 
 /* ═══════ ESTADO SERVICIO VIEW ═══════ */
 function EstadoServicioView() {
-  const [alertas, setAlertas] = useState({ subte: null, trenes: null });
+  const [alertas, setAlertas] = useState({ subte: null, trenes: null, colectivos: null });
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("subte");
 
@@ -713,14 +806,16 @@ function EstadoServicioView() {
 
   const fetchAlertas = async () => {
     setLoading(true);
-    const results = { subte: null, trenes: null };
+    const results = { subte: null, trenes: null, colectivos: null };
     try {
-      const [subteResp, trenesResp] = await Promise.all([
+      const [subteResp, trenesResp, colectivosResp] = await Promise.all([
         fetch(TRANSPORTE_PROXY + "?tipo=subte-alertas").then((r) => r.ok ? r.json() : null).catch(() => null),
         fetch(TRANSPORTE_PROXY + "?tipo=trenes-alertas").then((r) => r.ok ? r.json() : null).catch(() => null),
+        fetch(TRANSPORTE_PROXY + "?tipo=colectivos-alertas").then((r) => r.ok ? r.json() : null).catch(() => null),
       ]);
       results.subte = subteResp;
       results.trenes = trenesResp;
+      results.colectivos = colectivosResp;
     } catch {}
     setAlertas(results);
     setLoading(false);
@@ -761,6 +856,7 @@ function EstadoServicioView() {
 
   const subteAlerts = parseAlerts(alertas.subte);
   const trenAlerts = parseAlerts(alertas.trenes);
+  const coleAlerts = parseAlerts(alertas.colectivos);
 
   return (
     <div>
@@ -774,9 +870,9 @@ function EstadoServicioView() {
       </div>
 
       {/* Tabs */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        {[["subte", "\uD83D\uDE87 Subte"], ["trenes", "\uD83D\uDE86 Trenes"]].map(([id, label]) => (
-          <button key={id} style={{ ...S.chipBtn, flex: 1, ...(activeTab === id ? S.chipBtnBlueActive : {}) }} onClick={() => setActiveTab(id)}>{label}</button>
+      <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+        {[["subte", "\uD83D\uDE87 Subte"], ["trenes", "\uD83D\uDE86 Trenes"], ["colectivos", "\uD83D\uDE8C Colectivos"]].map(([id, label]) => (
+          <button key={id} style={{ ...S.chipBtn, flex: 1, fontSize: 13, padding: "8px 10px", ...(activeTab === id ? S.chipBtnBlueActive : {}) }} onClick={() => setActiveTab(id)}>{label}</button>
         ))}
       </div>
 
@@ -845,6 +941,33 @@ function EstadoServicioView() {
             <div style={{ ...S.card, padding: 24, textAlign: "center" }}>
               <div style={{ fontSize: 36, marginBottom: 8 }}>{"\u2705"}</div>
               <div style={{ fontWeight: 600, color: "#15803d" }}>Sin alertas de servicio activas</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === "colectivos" && (
+        <div>
+          {coleAlerts.length > 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {coleAlerts.map((a, i) => (
+                <div key={i} style={{ ...S.card, padding: 14 }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                    <span style={{ fontSize: 20 }}>{a.effect === "NO_SERVICE" ? "\u26D4" : a.effect === "REDUCED_SERVICE" ? "\u26A0\uFE0F" : "\u2139\uFE0F"}</span>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>{a.header}</div>
+                      {a.route && <div style={{ fontSize: 12, color: "#2563eb", marginBottom: 4 }}>Línea {a.route}</div>}
+                      {a.description && <div style={{ fontSize: 13, color: "#57534e", lineHeight: 1.5 }}>{a.description}</div>}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ ...S.card, padding: 24, textAlign: "center" }}>
+              <div style={{ fontSize: 36, marginBottom: 8 }}>{"\u2705"}</div>
+              <div style={{ fontWeight: 600, color: "#15803d" }}>Sin alertas de colectivos activas</div>
+              <div style={{ fontSize: 12, color: "#78716c", marginTop: 4 }}>Todas las líneas funcionando con normalidad</div>
             </div>
           )}
         </div>
@@ -1370,7 +1493,8 @@ export default function SuperMamu() {
   const [menuResult, setMenuResult] = useState(null);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [comparisonResult, setComparisonResult] = useState(null);
-  const [lista, setLista] = useState([]);
+  const [listas, setListas] = useState([{ id: "default", name: "Mi Lista", items: [] }]);
+  const [activeListaId, setActiveListaId] = useState("default");
   const inputRef = useRef(null);
   const scannerObjRef = useRef(null);
   const lastScannedRef = useRef(null);
@@ -1379,13 +1503,23 @@ export default function SuperMamu() {
   useEffect(() => {
     try { const m = localStorage.getItem("supermamu_menu"); if (m) { const parsed = JSON.parse(m); setMenuResult(parsed); setMenuStep("result"); } } catch {}
     try { const c = localStorage.getItem("supermamu_cart"); if (c) setCart(JSON.parse(c)); } catch {}
-    try { const l = localStorage.getItem("supermamu_lista"); if (l) setLista(JSON.parse(l)); } catch {}
+    try {
+      const l = localStorage.getItem("supermamu_listas_v2");
+      if (l) {
+        const parsed = JSON.parse(l);
+        if (parsed.lists?.length) { setListas(parsed.lists); setActiveListaId(parsed.activeId || parsed.lists[0].id); }
+      } else {
+        // Migrate from old single-list format
+        const old = localStorage.getItem("supermamu_lista");
+        if (old) { const items = JSON.parse(old); if (items.length) setListas([{ id: "default", name: "Mi Lista", items }]); }
+      }
+    } catch {}
     if (!document.getElementById("html5qr-script")) { const s = document.createElement("script"); s.id = "html5qr-script"; s.src = "https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"; s.async = true; document.head.appendChild(s); }
   }, []);
 
   useEffect(() => { if (tab !== "buscar" && scannerActive) stopScanner(); }, [tab, scannerActive]);
   useEffect(() => { try { localStorage.setItem("supermamu_cart", JSON.stringify(cart)); } catch {} }, [cart]);
-  useEffect(() => { try { localStorage.setItem("supermamu_lista", JSON.stringify(lista)); } catch {} }, [lista]);
+  useEffect(() => { try { localStorage.setItem("supermamu_listas_v2", JSON.stringify({ activeId: activeListaId, lists: listas })); } catch {} }, [listas, activeListaId]);
 
   const showToast = useCallback((msg) => { setToast(msg); setTimeout(() => setToast(null), 2500); }, []);
 
@@ -1461,20 +1595,25 @@ export default function SuperMamu() {
     });
     showToast("Agregado de " + item.tiendaMin + " \u2713");
   };
+  // Helper: get/set active list items
+  const activeListaItems = listas.find((l) => l.id === activeListaId)?.items || [];
+  const setActiveListaItems = (updater) => {
+    setListas((prev) => prev.map((l) => l.id === activeListaId ? { ...l, items: typeof updater === "function" ? updater(l.items) : updater } : l));
+  };
+
   const addToLista = (text) => {
     const trimmed = (text || "").trim();
     if (!trimmed) return;
-    // Avoid duplicates (case-insensitive)
-    if (lista.some((l) => l.text.toLowerCase() === trimmed.toLowerCase())) {
+    if (activeListaItems.some((l) => l.text.toLowerCase() === trimmed.toLowerCase())) {
       showToast("Ya está en la lista");
       return;
     }
-    setLista((prev) => [...prev, { id: Date.now() + Math.random(), text: trimmed, checked: false }]);
+    setActiveListaItems((prev) => [...prev, { id: Date.now() + Math.random(), text: trimmed, checked: false }]);
     showToast("Agregado a la lista \u2713");
   };
   const addAllIngredientsToLista = (ingredientes) => {
     let added = 0;
-    const existing = new Set(lista.map((l) => l.text.toLowerCase()));
+    const existing = new Set(activeListaItems.map((l) => l.text.toLowerCase()));
     const newItems = [];
     for (const ing of ingredientes) {
       const t = ing.trim();
@@ -1485,8 +1624,8 @@ export default function SuperMamu() {
       }
     }
     if (newItems.length > 0) {
-      setLista((prev) => [...prev, ...newItems]);
-      showToast(added + " producto" + (added > 1 ? "s" : "") + " agregado" + (added > 1 ? "s" : "") + " a la lista \u2713");
+      setActiveListaItems((prev) => [...prev, ...newItems]);
+      showToast(added + " producto" + (added > 1 ? "s" : "") + " agregado" + (added > 1 ? "s" : "") + " \u2713");
     } else {
       showToast("Ya están todos en la lista");
     }
@@ -1533,7 +1672,7 @@ export default function SuperMamu() {
           {[["buscar","\uD83D\uDD0D","Buscar"],["menu","\uD83E\uDD16","Menú IA"],["lista","\uD83D\uDCDD","Lista"],["config","\u2699\uFE0F","Config"]].map(([id,icon,label]) => (
             <button key={id} style={{ ...S.tabItem, ...(tab === id ? { color: "#ea580c" } : {}), position: "relative" }} onClick={() => setTab(id)}>
               <span style={{ fontSize: 18 }}>{icon}</span>
-              {id === "lista" && lista.filter((l) => !l.checked).length > 0 && <span style={{ ...S.cartBadge, position: "absolute", top: 4, right: "calc(50% - 18px)", fontSize: 9, padding: "0px 5px", minWidth: 16 }}>{lista.filter((l) => !l.checked).length}</span>}
+              {id === "lista" && activeListaItems.filter((l) => !l.checked).length > 0 && <span style={{ ...S.cartBadge, position: "absolute", top: 4, right: "calc(50% - 18px)", fontSize: 9, padding: "0px 5px", minWidth: 16 }}>{activeListaItems.filter((l) => !l.checked).length}</span>}
               <span style={{ fontSize: 10, marginTop: 2 }}>{label}</span>
             </button>
           ))}
@@ -1574,7 +1713,7 @@ export default function SuperMamu() {
           </div>
         )}
         {category === "super" && tab === "menu" && <MenuIA setTab={setTab} onSearchProduct={(q) => { setQuery(q); setTab("buscar"); setTimeout(() => doSearchOptions(q), 100); }} menuStep={menuStep} setMenuStep={setMenuStep} menuResult={menuResult} setMenuResult={setMenuResult} onAddToLista={addToLista} onAddAllToLista={addAllIngredientsToLista} />}
-        {category === "super" && tab === "lista" && <ListaView lista={lista} setLista={setLista} onSearchProduct={(q) => { setQuery(q); setTab("buscar"); setTimeout(() => doSearchOptions(q), 100); }} />}
+        {category === "super" && tab === "lista" && <ListaView listas={listas} setListas={setListas} activeListaId={activeListaId} setActiveListaId={setActiveListaId} lista={activeListaItems} setLista={setActiveListaItems} onSearchProduct={(q) => { setQuery(q); setTab("buscar"); setTimeout(() => doSearchOptions(q), 100); }} />}
         {category === "super" && tab === "carrito" && <CartView cart={cart} setCart={setCart} />}
         {category === "super" && tab === "config" && <ConfigView />}
 
