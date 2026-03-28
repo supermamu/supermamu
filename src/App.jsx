@@ -2,7 +2,9 @@ import { useState, useEffect, useRef, useCallback } from "react";
 
 const PROXY = "https://coto-proxy.supermamuuu.workers.dev";
 const AI_PROXY = "https://supermamu-ai.supermamuuu.workers.dev";
+const TRANSPORTE_PROXY = "https://supermamu-transporte.supermamuuu.workers.dev";
 
+/* ═══════ SUPERMERCADO CONFIG ═══════ */
 const TIENDAS = [
   { id: "carrefour", label: "Carrefour", color: "#003087", mapsQuery: "Carrefour" },
   { id: "changomas", label: "Changomás", color: "#f7941d", mapsQuery: "Changomas" },
@@ -14,6 +16,12 @@ const TIENDAS = [
 ];
 const VTEX_TIENDAS = TIENDAS.filter((t) => t.id !== "coto");
 const fmt = (n) => Number(n).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/* ═══════ CATEGORIES ═══════ */
+const CATEGORIES = [
+  { id: "super", label: "Supermercado", icon: "\uD83D\uDED2", color: "#ea580c" },
+  { id: "transporte", label: "Transporte", icon: "\uD83D\uDE8C", color: "#2563eb" },
+];
 
 /* ═══════ VTEX PRODUCT PARSER ═══════ */
 function parseVtexProduct(producto) {
@@ -100,7 +108,6 @@ async function comparePrices(ean, exactName) {
   );
   const cotoConfig = TIENDAS.find((t) => t.id === "coto");
   let cotoResult = { ...cotoConfig, nombre: null, precio: null, listPrice: null, link: null, hasOffer: false, imagen: null };
-  // Coto doesn't search by EAN — use exactName or fall back to name from VTEX results
   const cotoSearchName = exactName || vtexResults.find((r) => r.nombre)?.nombre;
   if (cotoSearchName) {
     try {
@@ -114,15 +121,13 @@ async function comparePrices(ean, exactName) {
   return [...vtexResults, cotoResult].sort((a, b) => a.label.localeCompare(b.label, "es"));
 }
 
-/* searchProductSimple removed — ingredients now link to the search tab */
-
 /* ═══════ PRODUCT OPTIONS LIST ═══════ */
 function ProductOptionsList({ options, onSelect, onBack }) {
   return (
     <div style={{ animation: "slideUp 0.25s ease" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
         <button style={S.btnBack} onClick={onBack}>{"\u2190"} Volver</button>
-        <span style={{ fontSize: 14, color: "#78716c" }}>{options.length} producto{options.length !== 1 ? "s" : ""} encontrado{options.length !== 1 ? "s" : ""}</span>
+        <span style={{ fontSize: 14, color: "#78716c" }}>{options.length} producto{options.length !== 1 ? "s" : ""}</span>
       </div>
       <div style={{ fontSize: 13, color: "#57534e", marginBottom: 10 }}>Elegí el producto exacto para comparar precios:</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -155,7 +160,7 @@ function PriceCard({ result, productName, productImage, onAddToCart, onBack }) {
         {imagen ? <img src={imagen} alt="" style={S.cardImg} onError={(e) => (e.target.style.display = "none")} /> : <div style={S.cardImgPlaceholder}>{"\uD83D\uDED2"}</div>}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={S.cardName}>{nombre}</div>
-          {onBack && <button style={{ ...S.btnBack, marginTop: 8, fontSize: 12 }} onClick={onBack}>{"\u2190"} Elegir otro producto</button>}
+          {onBack && <button style={{ ...S.btnBack, marginTop: 8, fontSize: 12 }} onClick={onBack}>{"\u2190"} Elegir otro</button>}
         </div>
       </div>
       <div>
@@ -238,44 +243,34 @@ function MenuIA({ setTab, onSearchProduct, menuStep, setMenuStep, menuResult, se
   const generateMenu = async () => {
     setMenuStep("loading"); setError(null);
     try {
-      const supermercados = TIENDAS.map((t) => t.label).join(", ");
-      const prompt = "Sos un nutricionista argentino experto en cocina familiar y en hacer compras inteligentes. Generá un menú semanal (lunes a domingo) para " + personas + " personas.\n" + (restricciones ? "Restricciones alimentarias: " + restricciones : "Sin restricciones alimentarias especiales.") + "\nPresupuesto: " + presupuesto + ".\n\nIMPORTANTE SOBRE LOS INGREDIENTES:\n- La lista debe contener ÚNICAMENTE productos reales que se compran en un supermercado, verdulería o carnicería. Cada ingrediente debe ser algo que se encuentra en una góndola o mostrador.\n- NUNCA repitas un producto. Si un ingrediente se usa en varios platos, listalo UNA SOLA VEZ con la cantidad total para la semana.\n- Usá nombres comerciales argentinos cuando sea posible (ej: \"Fideos Matarazzo spaghetti 500 g\").\n- Incluí cantidades aproximadas para " + personas + " personas durante una semana.\n\nEjemplos CORRECTOS de ingredientes: \"Pechuga de pollo 2 kg\", \"Arroz largo fino 1 kg\", \"Tomates redondos 2 kg\", \"Cebolla 1.5 kg\", \"Aceite de girasol 1.5 L\"\nEjemplos INCORRECTOS: \"Ensalada de pollo\", \"Milanesas con puré\", \"Tarta de verduras\" (estos son platos, NO productos)\n\nRespondé ÚNICAMENTE con JSON válido, sin texto adicional, sin markdown, sin backticks:\n{\"menu\":[{\"dia\":\"Lunes\",\"almuerzo\":\"nombre del plato\",\"cena\":\"nombre del plato\"},{\"dia\":\"Martes\",\"almuerzo\":\"nombre del plato\",\"cena\":\"nombre del plato\"},{\"dia\":\"Miércoles\",\"almuerzo\":\"nombre del plato\",\"cena\":\"nombre del plato\"},{\"dia\":\"Jueves\",\"almuerzo\":\"nombre del plato\",\"cena\":\"nombre del plato\"},{\"dia\":\"Viernes\",\"almuerzo\":\"nombre del plato\",\"cena\":\"nombre del plato\"},{\"dia\":\"Sábado\",\"almuerzo\":\"nombre del plato\",\"cena\":\"nombre del plato\"},{\"dia\":\"Domingo\",\"almuerzo\":\"nombre del plato\",\"cena\":\"nombre del plato\"}],\"ingredientes\":[\"producto 1 con cantidad total\",\"producto 2 con cantidad total\"],\"tips\":\"Un consejo útil breve para ahorrar en la compra\"}";
-
+      const prompt = "Sos un nutricionista argentino experto en cocina familiar y en hacer compras inteligentes. Generá un menú semanal (lunes a domingo) para " + personas + " personas.\n" + (restricciones ? "Restricciones alimentarias: " + restricciones : "Sin restricciones alimentarias especiales.") + "\nPresupuesto: " + presupuesto + ".\n\nIMPORTANTE SOBRE LOS INGREDIENTES:\n- La lista debe contener ÚNICAMENTE productos reales que se compran en un supermercado.\n- NUNCA repitas un producto. Si un ingrediente se usa en varios platos, listalo UNA SOLA VEZ con la cantidad total.\n- Usá nombres comerciales argentinos cuando sea posible.\n- Incluí cantidades aproximadas para " + personas + " personas durante una semana.\n\nRespondé ÚNICAMENTE con JSON válido, sin texto adicional:\n{\"menu\":[{\"dia\":\"Lunes\",\"almuerzo\":\"nombre del plato\",\"cena\":\"nombre del plato\"}],\"ingredientes\":[\"producto con cantidad\"],\"tips\":\"consejo breve\"}";
       const resp = await fetch(AI_PROXY, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "arcee-ai/trinity-large-preview:free", messages: [{ role: "system", content: "Respondés ÚNICAMENTE con JSON válido. Sin texto, sin markdown, solo JSON. NUNCA repitas ingredientes en la lista." }, { role: "user", content: prompt }], max_tokens: 4096, temperature: 0.7 }),
+        body: JSON.stringify({ model: "arcee-ai/trinity-large-preview:free", messages: [{ role: "system", content: "Respondés ÚNICAMENTE con JSON válido. Sin texto, sin markdown, solo JSON." }, { role: "user", content: prompt }], max_tokens: 4096, temperature: 0.7 }),
       });
-      if (!resp.ok) { const t = await resp.text().catch(() => ""); let m = "Error " + resp.status; try { m = JSON.parse(t).error?.message || m; } catch {} throw new Error(m); }
+      if (!resp.ok) throw new Error("Error " + resp.status);
       const rawText = await resp.text();
-      if (!rawText?.trim()) throw new Error("El modelo devolvió una respuesta vacía. Intentá de nuevo.");
-      let data; try { data = JSON.parse(rawText); } catch { throw new Error("Respuesta inválida del servidor."); }
+      if (!rawText?.trim()) throw new Error("Respuesta vacía. Intentá de nuevo.");
+      let data; try { data = JSON.parse(rawText); } catch { throw new Error("Respuesta inválida."); }
       let content = data.choices?.[0]?.message?.content || "";
-      if (!content?.trim()) throw new Error("El modelo no generó contenido. Intentá de nuevo.");
+      if (!content?.trim()) throw new Error("Sin contenido. Intentá de nuevo.");
       content = content.replace(/```json\s*/gi, "").replace(/```\s*/gi, "").trim();
       const js = content.indexOf("{"), je = content.lastIndexOf("}");
-      if (js === -1 || je === -1) throw new Error("El modelo no devolvió JSON válido.");
+      if (js === -1 || je === -1) throw new Error("JSON inválido.");
       content = content.slice(js, je + 1);
-      let parsed; try { parsed = JSON.parse(content); } catch { try { parsed = JSON.parse(content.replace(/,\s*([}\]])/g, "$1")); } catch { throw new Error("JSON incompleto. Intentá de nuevo."); } }
-      if (!parsed.menu || !Array.isArray(parsed.menu)) throw new Error("Menú inválido. Intentá de nuevo.");
-      // Normalize: merge category lists into single ingredientes if model used categories
+      let parsed; try { parsed = JSON.parse(content); } catch { try { parsed = JSON.parse(content.replace(/,\s*([}\]])/g, "$1")); } catch { throw new Error("JSON incompleto."); } }
+      if (!parsed.menu) throw new Error("Menú inválido.");
       if (!parsed.ingredientes) {
-        const all = [...(parsed.supermercado || []), ...(parsed.verduleria || []), ...(parsed.carniceria || [])];
-        parsed.ingredientes = all;
+        parsed.ingredientes = [...(parsed.supermercado || []), ...(parsed.verduleria || []), ...(parsed.carniceria || [])];
       }
-      // Deduplicate ingredients (case-insensitive)
       if (parsed.ingredientes) {
         const seen = new Set();
-        parsed.ingredientes = parsed.ingredientes.filter((ing) => {
-          const key = ing.toLowerCase().trim();
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
+        parsed.ingredientes = parsed.ingredientes.filter((ing) => { const k = ing.toLowerCase().trim(); if (seen.has(k)) return false; seen.add(k); return true; });
       }
       setMenuResult(parsed); setMenuStep("result");
       try { localStorage.setItem("supermamu_menu", JSON.stringify(parsed)); } catch {}
-    } catch (e) { setError(e.message || "Error generando el menú"); setMenuStep("config"); }
+    } catch (e) { setError(e.message); setMenuStep("config"); }
   };
 
   const handleIngredientClick = (ing) => {
@@ -283,28 +278,26 @@ function MenuIA({ setTab, onSearchProduct, menuStep, setMenuStep, menuResult, se
     onSearchProduct(searchTerm);
   };
 
-  if (menuStep === "loading") return <div style={S.emptyState}><div style={S.spinner} /><div style={{ marginTop: 16, fontWeight: 600 }}>Generando tu menú semanal...</div><div style={{ fontSize: 13, color: "#a3a3a3", marginTop: 4 }}>Esto puede tardar unos segundos</div></div>;
+  if (menuStep === "loading") return <div style={S.emptyState}><div style={S.spinner} /><div style={{ marginTop: 16, fontWeight: 600 }}>Generando tu menú semanal...</div></div>;
 
   if (menuStep === "result" && menuResult) {
     return (
       <div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <h3 style={{ fontSize: 18, fontWeight: 800, fontFamily: "'Fredoka', sans-serif" }}>{"\uD83C\uDF7D\uFE0F"} Tu Menú Semanal</h3>
-          <button style={S.btnSmall} onClick={() => { setMenuStep("config"); setMenuResult(null); try { localStorage.removeItem("supermamu_menu"); } catch {} }}>{"\u2728"} Nuevo menú</button>
+          <button style={S.btnSmall} onClick={() => { setMenuStep("config"); setMenuResult(null); try { localStorage.removeItem("supermamu_menu"); } catch {} }}>{"\u2728"} Nuevo</button>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 20 }}>
           {menuResult.menu?.map((day, i) => <div key={i} style={S.menuDay}><div style={S.menuDayLabel}>{day.dia}</div><div style={{ flex: 1 }}><div style={{ fontSize: 13 }}>{"\uD83C\uDF24\uFE0F"} {day.almuerzo}</div><div style={{ fontSize: 13, marginTop: 2 }}>{"\uD83C\uDF19"} {day.cena}</div></div></div>)}
         </div>
         {menuResult.tips && <div style={S.tipBox}>{"\uD83D\uDCA1"} <strong>Tip:</strong> {menuResult.tips}</div>}
-
         <h3 style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Fredoka', sans-serif", marginBottom: 4, marginTop: 20 }}>{"\uD83D\uDECD\uFE0F"} Lista de Compras</h3>
         <div style={{ fontSize: 12, color: "#78716c", marginBottom: 12 }}>Tocá un producto para buscarlo y comparar precios</div>
-
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           {menuResult.ingredientes?.map((ing, i) => (
             <button key={i} style={S.ingredientBtn} onClick={() => handleIngredientClick(ing)}>
               <span style={{ flex: 1, textAlign: "left" }}>{ing}</span>
-              <span style={{ color: "#ea580c", fontSize: 13, flexShrink: 0 }}>{"\uD83D\uDD0D"} Buscar</span>
+              <span style={{ color: "#ea580c", fontSize: 13, flexShrink: 0 }}>{"\uD83D\uDD0D"}</span>
             </button>
           ))}
         </div>
@@ -318,8 +311,428 @@ function MenuIA({ setTab, onSearchProduct, menuStep, setMenuStep, menuResult, se
       {error && <div style={S.errorBox}>{error}</div>}
       <div style={S.formGroup}><label style={S.formLabel}>{"\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67\u200D\uD83D\uDC66"} ¿Para cuántas personas?</label><div style={{ display: "flex", gap: 8 }}>{["1","2","3","4","5","6"].map((n) => <button key={n} style={{ ...S.chipBtn, ...(personas === n ? S.chipBtnActive : {}) }} onClick={() => setPersonas(n)}>{n}</button>)}</div></div>
       <div style={S.formGroup}><label style={S.formLabel}>{"\uD83D\uDCB0"} Presupuesto</label><div style={{ display: "flex", gap: 8 }}>{[["económico","Económico"],["moderado","Moderado"],["sin límite","Sin límite"]].map(([v,l]) => <button key={v} style={{ ...S.chipBtn, flex: 1, ...(presupuesto === v ? S.chipBtnActive : {}) }} onClick={() => setPresupuesto(v)}>{l}</button>)}</div></div>
-      <div style={S.formGroup}><label style={S.formLabel}>{"\uD83E\uDD57"} Restricciones alimentarias (opcional)</label><input style={S.input} value={restricciones} onChange={(e) => setRestricciones(e.target.value)} placeholder="Ej: sin gluten, vegetariano..." /></div>
+      <div style={S.formGroup}><label style={S.formLabel}>{"\uD83E\uDD57"} Restricciones (opcional)</label><input style={S.input} value={restricciones} onChange={(e) => setRestricciones(e.target.value)} placeholder="Ej: sin gluten, vegetariano..." /></div>
       <button style={{ ...S.btnPrimary, width: "100%", padding: "16px 24px", fontSize: 16, marginTop: 8 }} onClick={generateMenu}>{"\u2728"} Generar mi menú semanal</button>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   TRANSPORTE SECTION
+   ═══════════════════════════════════════════════════ */
+
+const NAFTA_EMPRESAS = {
+  YPF: { color: "#0033a1", icon: "\u26FD" },
+  Shell: { color: "#fbce07", textColor: "#d4210d", icon: "\u26FD" },
+  Axion: { color: "#00529b", icon: "\u26FD" },
+  Puma: { color: "#c8102e", icon: "\u26FD" },
+};
+
+/* ═══════ NAFTA VIEW ═══════ */
+function NaftaView() {
+  const [precios, setPrecios] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [filtro, setFiltro] = useState("todos");
+
+  useEffect(() => {
+    fetchNafta();
+  }, []);
+
+  const fetchNafta = async () => {
+    setLoading(true); setError(null);
+    try {
+      const resp = await fetch(TRANSPORTE_PROXY + "?tipo=nafta");
+      if (!resp.ok) throw new Error("Error " + resp.status);
+      const data = await resp.json();
+      setPrecios(data);
+    } catch (e) {
+      setError(e.message);
+    }
+    setLoading(false);
+  };
+
+  if (loading) return <div style={S.emptyState}><div style={S.spinnerBlue} /><div style={{ marginTop: 16 }}>Consultando precios de nafta...</div></div>;
+  if (error) return <div style={S.emptyState}><div style={{ fontSize: 48, marginBottom: 12 }}>{"\u26FD"}</div><div style={S.errorBox}>{error}</div><button style={S.btnBlue} onClick={fetchNafta}>Reintentar</button></div>;
+
+  const lista = precios?.precios || [];
+  const empresas = [...new Set(lista.map((p) => p.empresa))];
+  const filtered = filtro === "todos" ? lista : lista.filter((p) => p.empresa === filtro);
+
+  // Group by empresa
+  const grouped = {};
+  filtered.forEach((p) => {
+    if (!grouped[p.empresa]) grouped[p.empresa] = [];
+    grouped[p.empresa].push(p);
+  });
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+        <span style={{ fontSize: 28 }}>{"\u26FD"}</span>
+        <div>
+          <h3 style={{ fontSize: 18, fontWeight: 800, fontFamily: "'Fredoka', sans-serif", margin: 0 }}>Precios de Nafta</h3>
+          <div style={{ fontSize: 12, color: "#78716c" }}>{precios?.nota || "CABA — Referencia"}</div>
+        </div>
+      </div>
+
+      {/* Filter chips */}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
+        <button style={{ ...S.chipBtn, ...(filtro === "todos" ? S.chipBtnBlueActive : {}) }} onClick={() => setFiltro("todos")}>Todas</button>
+        {empresas.map((e) => (
+          <button key={e} style={{ ...S.chipBtn, ...(filtro === e ? S.chipBtnBlueActive : {}) }} onClick={() => setFiltro(e)}>{e}</button>
+        ))}
+      </div>
+
+      {Object.entries(grouped).map(([empresa, prods]) => {
+        const cfg = NAFTA_EMPRESAS[empresa] || { color: "#374151", icon: "\u26FD" };
+        return (
+          <div key={empresa} style={{ ...S.card, marginBottom: 12 }}>
+            <div style={{ padding: "12px 16px", borderBottom: "1px solid #f5f5f4", display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 10, background: cfg.color, display: "flex", alignItems: "center", justifyContent: "center", color: cfg.textColor || "#fff", fontWeight: 700, fontSize: 14 }}>{empresa.slice(0, 2)}</div>
+              <span style={{ fontFamily: "'Fredoka', sans-serif", fontWeight: 700, fontSize: 16 }}>{empresa}</span>
+            </div>
+            {prods.map((p, i) => {
+              const isSuper = /s[uú]per/i.test(p.producto);
+              return (
+                <div key={i} style={{ ...S.priceRow, borderBottom: i < prods.length - 1 ? "1px solid #f5f5f4" : "none" }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 500 }}>{p.producto}</div>
+                  </div>
+                  <div style={{ ...S.priceAmount, color: isSuper ? "#2563eb" : "#171717", fontSize: 17 }}>
+                    ${fmt(p.precio)}
+                    <span style={{ fontSize: 11, color: "#a3a3a3", fontWeight: 400 }}>/L</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+
+      {precios?.actualizacion && (
+        <div style={{ textAlign: "center", fontSize: 11, color: "#a3a3a3", marginTop: 8 }}>
+          Última actualización: {precios.actualizacion} · Fuente: {precios.source}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════ ESTADO SERVICIO VIEW ═══════ */
+function EstadoServicioView() {
+  const [alertas, setAlertas] = useState({ subte: null, trenes: null });
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("subte");
+
+  useEffect(() => {
+    fetchAlertas();
+  }, []);
+
+  const fetchAlertas = async () => {
+    setLoading(true);
+    const results = { subte: null, trenes: null };
+    try {
+      const [subteResp, trenesResp] = await Promise.all([
+        fetch(TRANSPORTE_PROXY + "?tipo=subte-alertas").then((r) => r.ok ? r.json() : null).catch(() => null),
+        fetch(TRANSPORTE_PROXY + "?tipo=trenes-alertas").then((r) => r.ok ? r.json() : null).catch(() => null),
+      ]);
+      results.subte = subteResp;
+      results.trenes = trenesResp;
+    } catch {}
+    setAlertas(results);
+    setLoading(false);
+  };
+
+  const SUBTE_LINES = [
+    { id: "A", color: "#18cccc" }, { id: "B", color: "#eb0909" },
+    { id: "C", color: "#233aa8" }, { id: "D", color: "#007a53" },
+    { id: "E", color: "#6d217d" }, { id: "H", color: "#ffdd00", textColor: "#333" },
+  ];
+
+  const parseAlerts = (data) => {
+    if (!data) return [];
+    // GTFS-RT ServiceAlerts format
+    const entity = data?.entity || data?.header?.entity || [];
+    if (Array.isArray(entity)) {
+      return entity.map((e) => {
+        const alert = e.alert || e;
+        return {
+          id: e.id,
+          header: alert.header_text?.translation?.[0]?.text || alert.headerText || "",
+          description: alert.description_text?.translation?.[0]?.text || alert.descriptionText || "",
+          route: alert.informed_entity?.[0]?.route_id || alert.informedEntity?.[0]?.routeId || "",
+          effect: alert.effect || "UNKNOWN",
+        };
+      }).filter((a) => a.header || a.description);
+    }
+    // If it's a different format, try to extract what we can
+    if (typeof data === "object") {
+      return Object.entries(data).filter(([k]) => k !== "header").map(([k, v]) => ({
+        id: k, header: typeof v === "string" ? v : JSON.stringify(v), description: "", route: k, effect: "UNKNOWN"
+      }));
+    }
+    return [];
+  };
+
+  if (loading) return <div style={S.emptyState}><div style={S.spinnerBlue} /><div style={{ marginTop: 16 }}>Consultando estado del servicio...</div></div>;
+
+  const subteAlerts = parseAlerts(alertas.subte);
+  const trenAlerts = parseAlerts(alertas.trenes);
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+        <span style={{ fontSize: 28 }}>{"\uD83D\uDE87"}</span>
+        <div>
+          <h3 style={{ fontSize: 18, fontWeight: 800, fontFamily: "'Fredoka', sans-serif", margin: 0 }}>Estado del Servicio</h3>
+          <div style={{ fontSize: 12, color: "#78716c" }}>Tiempo real — CABA</div>
+        </div>
+        <button style={{ ...S.btnSmall, marginLeft: "auto" }} onClick={fetchAlertas}>{"\uD83D\uDD04"}</button>
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        {[["subte", "\uD83D\uDE87 Subte"], ["trenes", "\uD83D\uDE86 Trenes"]].map(([id, label]) => (
+          <button key={id} style={{ ...S.chipBtn, flex: 1, ...(activeTab === id ? S.chipBtnBlueActive : {}) }} onClick={() => setActiveTab(id)}>{label}</button>
+        ))}
+      </div>
+
+      {activeTab === "subte" && (
+        <div>
+          {/* Subte line status indicators */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 16, justifyContent: "center" }}>
+            {SUBTE_LINES.map((line) => {
+              const hasAlert = subteAlerts.some((a) => a.route?.toUpperCase().includes(line.id) || a.header?.toUpperCase().includes("LÍNEA " + line.id));
+              return (
+                <div key={line.id} style={{
+                  width: 44, height: 44, borderRadius: 12, background: line.color, color: line.textColor || "#fff",
+                  display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 18,
+                  fontFamily: "'Fredoka', sans-serif", position: "relative",
+                  border: hasAlert ? "3px solid #dc2626" : "3px solid transparent",
+                  boxShadow: hasAlert ? "0 0 8px rgba(220,38,38,0.4)" : "0 2px 6px rgba(0,0,0,0.1)",
+                }}>
+                  {line.id}
+                  {hasAlert && <span style={{ position: "absolute", top: -4, right: -4, width: 12, height: 12, borderRadius: "50%", background: "#dc2626", border: "2px solid #fff" }} />}
+                </div>
+              );
+            })}
+          </div>
+
+          {subteAlerts.length > 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {subteAlerts.map((a, i) => (
+                <div key={i} style={{ ...S.card, padding: 14 }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                    <span style={{ fontSize: 20 }}>{a.effect === "NO_SERVICE" ? "\u26D4" : a.effect === "REDUCED_SERVICE" ? "\u26A0\uFE0F" : "\u2139\uFE0F"}</span>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>{a.header}</div>
+                      {a.description && <div style={{ fontSize: 13, color: "#57534e", lineHeight: 1.5 }}>{a.description}</div>}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ ...S.card, padding: 24, textAlign: "center" }}>
+              <div style={{ fontSize: 36, marginBottom: 8 }}>{"\u2705"}</div>
+              <div style={{ fontWeight: 600, color: "#15803d" }}>Todas las líneas funcionando con normalidad</div>
+              <div style={{ fontSize: 12, color: "#78716c", marginTop: 4 }}>Sin alertas de servicio activas</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === "trenes" && (
+        <div>
+          {trenAlerts.length > 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {trenAlerts.map((a, i) => (
+                <div key={i} style={{ ...S.card, padding: 14 }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                    <span style={{ fontSize: 20 }}>{a.effect === "NO_SERVICE" ? "\u26D4" : "\u26A0\uFE0F"}</span>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>{a.header}</div>
+                      {a.description && <div style={{ fontSize: 13, color: "#57534e", lineHeight: 1.5 }}>{a.description}</div>}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ ...S.card, padding: 24, textAlign: "center" }}>
+              <div style={{ fontSize: 36, marginBottom: 8 }}>{"\u2705"}</div>
+              <div style={{ fontWeight: 600, color: "#15803d" }}>Sin alertas de servicio activas</div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════ TARIFAS VIEW ═══════ */
+function TarifasView() {
+  const [tarifas, setTarifas] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(TRANSPORTE_PROXY + "?tipo=tarifas")
+      .then((r) => r.json())
+      .then(setTarifas)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <div style={S.emptyState}><div style={S.spinnerBlue} /></div>;
+
+  const t = tarifas?.tarifas;
+  if (!t) return <div style={S.emptyState}>No se pudieron cargar las tarifas</div>;
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+        <span style={{ fontSize: 28 }}>{"\uD83D\uDCB3"}</span>
+        <div>
+          <h3 style={{ fontSize: 18, fontWeight: 800, fontFamily: "'Fredoka', sans-serif", margin: 0 }}>Tarifas de Transporte</h3>
+          <div style={{ fontSize: 12, color: "#78716c" }}>AMBA — Vigentes desde {tarifas?.actualizacion}</div>
+        </div>
+      </div>
+
+      {/* Subte */}
+      <div style={{ ...S.card, marginBottom: 12, padding: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+          <span style={{ fontSize: 24 }}>{"\uD83D\uDE87"}</span>
+          <span style={{ fontFamily: "'Fredoka', sans-serif", fontWeight: 700, fontSize: 16 }}>{t.subte.nombre}</span>
+          <span style={{ marginLeft: "auto", fontFamily: "'Fredoka', sans-serif", fontWeight: 800, fontSize: 22, color: "#2563eb" }}>${fmt(t.subte.precio)}</span>
+        </div>
+        <div style={{ fontSize: 12, color: "#78716c" }}>{t.subte.nota}</div>
+      </div>
+
+      {/* Colectivo */}
+      <div style={{ ...S.card, marginBottom: 12 }}>
+        <div style={{ padding: "12px 16px", borderBottom: "1px solid #f5f5f4", display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 24 }}>{"\uD83D\uDE8C"}</span>
+          <span style={{ fontFamily: "'Fredoka', sans-serif", fontWeight: 700, fontSize: 16 }}>{t.colectivo_caba.nombre}</span>
+        </div>
+        {t.colectivo_caba.tramos.map((tr, i) => (
+          <div key={i} style={{ ...S.priceRow, borderBottom: i < t.colectivo_caba.tramos.length - 1 ? "1px solid #f5f5f4" : "none" }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 500 }}>{tr.distancia}</div>
+              {tr.tarifa_social && <div style={{ fontSize: 11, color: "#15803d" }}>Tarifa social: ${fmt(tr.tarifa_social)}</div>}
+            </div>
+            <div style={{ ...S.priceAmount, fontSize: 16 }}>${fmt(tr.precio)}</div>
+          </div>
+        ))}
+        <div style={{ padding: "8px 16px", fontSize: 11, color: "#78716c" }}>{t.colectivo_caba.nota}</div>
+      </div>
+
+      {/* Tren */}
+      <div style={{ ...S.card, marginBottom: 12 }}>
+        <div style={{ padding: "12px 16px", borderBottom: "1px solid #f5f5f4", display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 24 }}>{"\uD83D\uDE86"}</span>
+          <span style={{ fontFamily: "'Fredoka', sans-serif", fontWeight: 700, fontSize: 16 }}>{t.tren.nombre}</span>
+        </div>
+        {t.tren.tramos.map((tr, i) => (
+          <div key={i} style={{ ...S.priceRow, borderBottom: i < t.tren.tramos.length - 1 ? "1px solid #f5f5f4" : "none" }}>
+            <div style={{ flex: 1 }}><div style={{ fontSize: 14, fontWeight: 500 }}>{tr.distancia}</div></div>
+            <div style={{ ...S.priceAmount, fontSize: 16 }}>${fmt(tr.precio)}</div>
+          </div>
+        ))}
+        <div style={{ padding: "8px 16px", fontSize: 11, color: "#78716c" }}>{t.tren.nota}</div>
+      </div>
+
+      {/* Saldo negativo */}
+      <div style={{ ...S.tipBox, background: "#eff6ff", borderColor: "#bfdbfe", color: "#1d4ed8" }}>
+        {"\u2139\uFE0F"} <strong>Saldo negativo SUBE:</strong> Hasta ${Math.abs(t.saldo_negativo.monto)} — {t.saldo_negativo.nota}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════ SUBE VIEW ═══════ */
+function SUBEView() {
+  return (
+    <div>
+      <div style={S.aiHero}>
+        <div style={{ fontSize: 48, marginBottom: 8 }}>{"\uD83D\uDCB3"}</div>
+        <h3 style={{ fontSize: 20, fontWeight: 800, fontFamily: "'Fredoka', sans-serif", marginBottom: 4 }}>Tu SUBE</h3>
+        <p style={{ fontSize: 13, color: "#78716c", maxWidth: 280, margin: "0 auto" }}>Consultá tu saldo y gestioná tu tarjeta</p>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <a href="https://tarjetasube.sube.gob.ar/" target="_blank" rel="noopener noreferrer" style={S.subeLink}>
+          <span style={{ fontSize: 24 }}>{"\uD83C\uDF10"}</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>Mi SUBE (web)</div>
+            <div style={{ fontSize: 12, color: "#78716c" }}>Consultá saldo, movimientos y beneficios</div>
+          </div>
+          <span style={{ color: "#2563eb" }}>{"\u203A"}</span>
+        </a>
+
+        <a href="https://wa.me/5491166777823?text=Hola" target="_blank" rel="noopener noreferrer" style={S.subeLink}>
+          <span style={{ fontSize: 24 }}>{"\uD83D\uDCAC"}</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>WhatsApp "Subi"</div>
+            <div style={{ fontSize: 12, color: "#78716c" }}>Chatbot oficial para consultar saldo</div>
+          </div>
+          <span style={{ color: "#2563eb" }}>{"\u203A"}</span>
+        </a>
+
+        <a href="tel:08007777823" style={S.subeLink}>
+          <span style={{ fontSize: 24 }}>{"\uD83D\uDCDE"}</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>0800-777-SUBE (7823)</div>
+            <div style={{ fontSize: 12, color: "#78716c" }}>Llamá para consultar saldo por teléfono</div>
+          </div>
+          <span style={{ color: "#2563eb" }}>{"\u203A"}</span>
+        </a>
+
+        <a href="https://play.google.com/store/apps/details?id=com.sube.app" target="_blank" rel="noopener noreferrer" style={S.subeLink}>
+          <span style={{ fontSize: 24 }}>{"\uD83D\uDCF1"}</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>App SUBE</div>
+            <div style={{ fontSize: 12, color: "#78716c" }}>Cargá saldo y consultá con NFC</div>
+          </div>
+          <span style={{ color: "#2563eb" }}>{"\u203A"}</span>
+        </a>
+      </div>
+
+      <div style={{ ...S.tipBox, background: "#eff6ff", borderColor: "#bfdbfe", color: "#1d4ed8", marginTop: 16 }}>
+        {"\uD83D\uDCA1"} <strong>Tip:</strong> Con la SUBE virtual podés pagar directo desde el celular (Android con NFC). Activala desde la app SUBE.
+      </div>
+    </div>
+  );
+}
+
+/* ═══════ TRANSPORTE MAIN ═══════ */
+function TransporteView() {
+  const [subTab, setSubTab] = useState("nafta");
+
+  return (
+    <div>
+      {/* Sub-navigation for Transporte */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 16, overflowX: "auto", paddingBottom: 4 }}>
+        {[
+          ["nafta", "\u26FD", "Nafta"],
+          ["estado", "\uD83D\uDE87", "Estado"],
+          ["tarifas", "\uD83D\uDCB3", "Tarifas"],
+          ["sube", "\uD83D\uDCB3", "SUBE"],
+        ].map(([id, icon, label]) => (
+          <button key={id} style={{
+            ...S.chipBtn,
+            whiteSpace: "nowrap",
+            ...(subTab === id ? S.chipBtnBlueActive : {}),
+          }} onClick={() => setSubTab(id)}>
+            {icon} {label}
+          </button>
+        ))}
+      </div>
+
+      {subTab === "nafta" && <NaftaView />}
+      {subTab === "estado" && <EstadoServicioView />}
+      {subTab === "tarifas" && <TarifasView />}
+      {subTab === "sube" && <SUBEView />}
     </div>
   );
 }
@@ -331,8 +744,8 @@ function ConfigView() {
       <div style={S.aiHero}><div style={{ fontSize: 48, marginBottom: 8 }}>{"\u2699\uFE0F"}</div><h3 style={{ fontSize: 20, fontWeight: 800, fontFamily: "'Fredoka', sans-serif" }}>Configuración</h3></div>
       <div style={{ ...S.card, padding: 16 }}>
         <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>{"\uD83D\uDCF1"} Sobre SuperMamu</div>
-        <p style={{ fontSize: 13, color: "#78716c", lineHeight: 1.6 }}>Compará precios entre los principales supermercados argentinos. Escaneá o buscá productos, armá tu lista de compras, y dejá que la IA te ayude a planificar tu menú semanal ahorrando.</p>
-        <div style={{ fontSize: 12, color: "#a3a3a3", marginTop: 12 }}>Menú IA powered by OpenRouter</div>
+        <p style={{ fontSize: 13, color: "#78716c", lineHeight: 1.6 }}>Tu gestor del hogar: compará precios de supermercados, consultá precios de nafta, estado del transporte público y tarifas actualizadas.</p>
+        <div style={{ fontSize: 12, color: "#a3a3a3", marginTop: 12 }}>Menú IA por OpenRouter · Transporte por API BA · v2.0</div>
       </div>
     </div>
   );
@@ -342,7 +755,9 @@ function ConfigView() {
    MAIN APP
    ═══════════════════════════════════════════════════ */
 export default function SuperMamu() {
+  const [category, setCategory] = useState("super");
   const [tab, setTab] = useState("buscar");
+  const [transporteTab, setTransporteTab] = useState("transporte");
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [cart, setCart] = useState([]);
@@ -350,7 +765,6 @@ export default function SuperMamu() {
   const [scannerActive, setScannerActive] = useState(false);
   const [searchStep, setSearchStep] = useState("idle");
   const [productOptions, setProductOptions] = useState([]);
-  // Menu IA state (lifted so it persists across tab switches)
   const [menuStep, setMenuStep] = useState("config");
   const [menuResult, setMenuResult] = useState(null);
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -367,8 +781,6 @@ export default function SuperMamu() {
   }, []);
 
   useEffect(() => { if (tab !== "buscar" && scannerActive) stopScanner(); }, [tab, scannerActive]);
-
-  // Persist cart to localStorage
   useEffect(() => { try { localStorage.setItem("supermamu_cart", JSON.stringify(cart)); } catch {} }, [cart]);
 
   const showToast = useCallback((msg) => { setToast(msg); setTimeout(() => setToast(null), 2500); }, []);
@@ -390,7 +802,7 @@ export default function SuperMamu() {
           setTimeout(() => { lastScannedRef.current = null; }, 3000);
         }
       }, () => {});
-    } catch (err) { console.error("Scanner error:", err); showToast("No se pudo acceder a la cámara"); setScannerActive(false); }
+    } catch { showToast("No se pudo acceder a la cámara"); setScannerActive(false); }
   };
 
   const stopScanner = async () => {
@@ -439,7 +851,6 @@ export default function SuperMamu() {
   const handleSearch = () => doSearchOptions(query);
   const addToCart = (item) => {
     setCart((prev) => {
-      const key = item.nombre + " @ " + item.tiendaMin;
       const existing = prev.find((c) => c.nombre === item.nombre && c.tiendaMin === item.tiendaMin);
       if (existing) return prev.map((c) => (c.nombre === item.nombre && c.tiendaMin === item.tiendaMin) ? { ...c, qty: c.qty + 1 } : c);
       return [...prev, { ...item, qty: 1 }];
@@ -448,15 +859,66 @@ export default function SuperMamu() {
   };
   const totalItems = cart.reduce((a, c) => a + c.qty, 0);
 
+  const accentColor = category === "super" ? "#ea580c" : "#2563eb";
+
   return (
     <div style={S.app}>
       <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet" />
-      <div style={S.header}><div style={S.logo}><img src="/logo-header.png" alt="SuperMamu" style={{ height: 76, width: 76, borderRadius: 38, marginRight: 10, verticalAlign: "middle" }} /><span style={{ color: "#ea580c" }}>Super</span><span style={{ color: "#171717" }}>Mamu</span></div><button style={S.cartHeaderBtn} onClick={() => setTab("carrito")}>{"\uD83D\uDED2"} {totalItems > 0 && <span style={S.cartBadge}>{totalItems}</span>}</button></div>
-      <div style={S.tabBar}>
-        {[["buscar","\uD83D\uDD0D","Buscar"],["menu","\uD83E\uDD16","Menú IA"],["carrito","\uD83D\uDED2","Carrito"],["config","\u2699\uFE0F","Config"]].map(([id,icon,label]) => <button key={id} style={{ ...S.tabItem, ...(tab === id ? S.tabActive : {}) }} onClick={() => setTab(id)}><span style={{ fontSize: 18 }}>{icon}</span><span style={{ fontSize: 10, marginTop: 2 }}>{label}</span></button>)}
+
+      {/* ═══ HEADER ═══ */}
+      <div style={S.header}>
+        <div style={S.logo}>
+          <img src="/logo-header.png" alt="SuperMamu" style={{ height: 40, width: 40, borderRadius: 20, marginRight: 8, verticalAlign: "middle" }} />
+          <span style={{ color: "#ea580c" }}>Super</span><span style={{ color: "#171717" }}>Mamu</span>
+        </div>
+        {category === "super" && (
+          <button style={S.cartHeaderBtn} onClick={() => setTab("carrito")}>{"\uD83D\uDED2"} {totalItems > 0 && <span style={S.cartBadge}>{totalItems}</span>}</button>
+        )}
       </div>
+
+      {/* ═══ CATEGORY SELECTOR ═══ */}
+      <div style={S.categoryBar}>
+        {CATEGORIES.map((cat) => (
+          <button
+            key={cat.id}
+            style={{
+              ...S.categoryBtn,
+              ...(category === cat.id ? { background: cat.color, color: "#fff", borderColor: cat.color } : {}),
+            }}
+            onClick={() => setCategory(cat.id)}
+          >
+            <span style={{ fontSize: 16 }}>{cat.icon}</span>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>{cat.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* ═══ TAB BAR — Supermercado ═══ */}
+      {category === "super" && (
+        <div style={S.tabBar}>
+          {[["buscar","\uD83D\uDD0D","Buscar"],["menu","\uD83E\uDD16","Menú IA"],["carrito","\uD83D\uDED2","Carrito"],["config","\u2699\uFE0F","Config"]].map(([id,icon,label]) => (
+            <button key={id} style={{ ...S.tabItem, ...(tab === id ? { color: "#ea580c" } : {}) }} onClick={() => setTab(id)}>
+              <span style={{ fontSize: 18 }}>{icon}</span><span style={{ fontSize: 10, marginTop: 2 }}>{label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ═══ TAB BAR — Transporte ═══ */}
+      {category === "transporte" && (
+        <div style={S.tabBar}>
+          {[["transporte","\uD83D\uDE8C","Transporte"],["config","\u2699\uFE0F","Config"]].map(([id,icon,label]) => (
+            <button key={id} style={{ ...S.tabItem, ...(transporteTab === id ? { color: "#2563eb" } : {}) }} onClick={() => setTransporteTab(id)}>
+              <span style={{ fontSize: 18 }}>{icon}</span><span style={{ fontSize: 10, marginTop: 2 }}>{label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ═══ CONTENT ═══ */}
       <div style={S.content}>
-        {tab === "buscar" && (
+        {/* SUPERMERCADO CONTENT */}
+        {category === "super" && tab === "buscar" && (
           <div>
             <div style={S.searchBox}>
               <input ref={inputRef} style={S.searchInput} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleSearch()} placeholder='Buscá: "agua benedictino"' />
@@ -469,13 +931,18 @@ export default function SuperMamu() {
             {searching && <div style={S.emptyState}><div style={S.spinner} /><div style={{ marginTop: 16, fontSize: 14, color: "#78716c" }}>{searchStep === "comparing" ? "Comparando precios en 7 supermercados..." : "Buscando productos..."}</div></div>}
             {!searching && searchStep === "options" && productOptions.length > 0 && <ProductOptionsList options={productOptions} onSelect={selectProduct} onBack={resetSearch} />}
             {!searching && searchStep === "comparing" && comparisonResult && <PriceCard result={comparisonResult} productName={selectedProduct?.nombre} productImage={selectedProduct?.imagen} onAddToCart={addToCart} onBack={productOptions.length > 1 ? goBackToOptions : resetSearch} />}
-            {!searching && searchStep === "idle" && !scannerActive && <div style={S.emptyState}><div style={{ fontSize: 56, marginBottom: 12 }}>{"\uD83D\uDD0D"}</div><div style={{ fontWeight: 600 }}>Buscá o escaneá un producto</div><div style={{ fontSize: 13, color: "#a3a3a3", marginTop: 4, maxWidth: 260, lineHeight: 1.5, margin: "4px auto 0" }}>Escribí el nombre, un código EAN, o tocá {"\uD83D\uDCF7"} para escanear el código de barras</div></div>}
+            {!searching && searchStep === "idle" && !scannerActive && <div style={S.emptyState}><div style={{ fontSize: 56, marginBottom: 12 }}>{"\uD83D\uDD0D"}</div><div style={{ fontWeight: 600 }}>Buscá o escaneá un producto</div><div style={{ fontSize: 13, color: "#a3a3a3", marginTop: 4, maxWidth: 260, lineHeight: 1.5, margin: "4px auto 0" }}>Escribí el nombre, un código EAN, o tocá {"\uD83D\uDCF7"} para escanear</div></div>}
           </div>
         )}
-        {tab === "menu" && <MenuIA setTab={setTab} onSearchProduct={(q) => { setQuery(q); setTab("buscar"); setTimeout(() => doSearchOptions(q), 100); }} menuStep={menuStep} setMenuStep={setMenuStep} menuResult={menuResult} setMenuResult={setMenuResult} />}
-        {tab === "carrito" && <CartView cart={cart} setCart={setCart} />}
-        {tab === "config" && <ConfigView />}
+        {category === "super" && tab === "menu" && <MenuIA setTab={setTab} onSearchProduct={(q) => { setQuery(q); setTab("buscar"); setTimeout(() => doSearchOptions(q), 100); }} menuStep={menuStep} setMenuStep={setMenuStep} menuResult={menuResult} setMenuResult={setMenuResult} />}
+        {category === "super" && tab === "carrito" && <CartView cart={cart} setCart={setCart} />}
+        {category === "super" && tab === "config" && <ConfigView />}
+
+        {/* TRANSPORTE CONTENT */}
+        {category === "transporte" && transporteTab === "transporte" && <TransporteView />}
+        {category === "transporte" && transporteTab === "config" && <ConfigView />}
       </div>
+
       {toast && <div style={S.toast}>{toast}</div>}
       <style>{`
         @keyframes spin{to{transform:rotate(360deg)}}
@@ -497,23 +964,31 @@ export default function SuperMamu() {
 /* ═══════ STYLES ═══════ */
 const S = {
   app: { maxWidth: 480, margin: "0 auto", minHeight: "100vh", background: "#faf9f6", fontFamily: "'DM Sans', system-ui, sans-serif", position: "relative", paddingBottom: 80 },
-  header: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", background: "#faf9f6", borderBottom: "1px solid #e7e5e4", position: "sticky", top: 0, zIndex: 100 },
-  logo: { fontFamily: "'Fredoka', sans-serif", fontWeight: 700, fontSize: 22, letterSpacing: -0.5 },
+  header: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 20px", background: "#faf9f6", borderBottom: "1px solid #e7e5e4", position: "sticky", top: 0, zIndex: 100 },
+  logo: { fontFamily: "'Fredoka', sans-serif", fontWeight: 700, fontSize: 22, letterSpacing: -0.5, display: "flex", alignItems: "center" },
   cartHeaderBtn: { background: "#f5f5f4", border: "1px solid #e7e5e4", borderRadius: 12, padding: "8px 14px", fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 },
   cartBadge: { background: "#ea580c", color: "#fff", fontSize: 11, fontWeight: 700, padding: "1px 7px", borderRadius: 20, minWidth: 20, textAlign: "center" },
+
+  // Category bar
+  categoryBar: { display: "flex", gap: 8, padding: "10px 20px", background: "#faf9f6", borderBottom: "1px solid #e7e5e4", position: "sticky", top: 61, zIndex: 99 },
+  categoryBtn: { display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 12, border: "1.5px solid #e7e5e4", background: "#fff", color: "#78716c", cursor: "pointer", fontFamily: "'DM Sans', sans-serif", flex: 1, justifyContent: "center", transition: "all 0.2s" },
+
   tabBar: { display: "flex", position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, background: "#faf9f6", borderTop: "1px solid #e7e5e4", zIndex: 100, padding: "6px 0 env(safe-area-inset-bottom, 8px) 0" },
   tabItem: { flex: 1, display: "flex", flexDirection: "column", alignItems: "center", padding: "8px 4px", border: "none", background: "transparent", color: "#a3a3a3", cursor: "pointer", fontFamily: "'DM Sans', sans-serif" },
-  tabActive: { color: "#ea580c" },
   content: { padding: 20, animation: "fadeIn 0.2s ease" },
+
+  // Search
   searchBox: { display: "flex", gap: 8, marginBottom: 12 },
   searchInput: { flex: 1, padding: "14px 16px", borderRadius: 14, border: "1.5px solid #e7e5e4", background: "#fff", fontSize: 15, fontFamily: "'DM Sans', sans-serif", color: "#171717", minWidth: 0 },
   searchBtn: { padding: "14px 16px", borderRadius: 14, border: "none", background: "#ea580c", color: "#fff", fontSize: 18, cursor: "pointer", fontWeight: 700, flexShrink: 0 },
-  scanBtn: { padding: "14px 15px", borderRadius: 14, border: "none", color: "#fff", fontSize: 16, cursor: "pointer", fontWeight: 700, flexShrink: 0 },
+  scanBtn: { padding: "14px 15px", borderRadius: 14, border: "none", fontSize: 16, cursor: "pointer", fontWeight: 700, flexShrink: 0 },
   suggestionChip: { padding: "6px 12px", borderRadius: 20, border: "1px solid #e7e5e4", background: "#fff", color: "#78716c", fontSize: 12, cursor: "pointer", fontFamily: "'DM Sans', sans-serif" },
   scannerWrap: { marginBottom: 14, borderRadius: 14, border: "2px solid #ea580c", overflow: "hidden", background: "#e7e5e4", animation: "scanPulse 2s ease infinite" },
   scannerRegion: { width: "100%", maxHeight: 130, overflow: "hidden" },
   scannerHint: { textAlign: "center", color: "#57534e", fontSize: 12, padding: "5px 0", background: "#d6d3d1", letterSpacing: 0.3, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 },
   scannerDot: { display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "#ef4444", animation: "blink 1.2s ease infinite" },
+
+  // Product options
   optionCard: { display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: "#fff", border: "1px solid #e7e5e4", borderRadius: 14, cursor: "pointer", width: "100%", fontFamily: "'DM Sans', sans-serif" },
   optionImg: { width: 56, height: 56, objectFit: "contain", borderRadius: 8, border: "1px solid #f5f5f4", background: "#fff", flexShrink: 0 },
   optionImgPlaceholder: { width: 56, height: 56, borderRadius: 8, border: "1px solid #f5f5f4", background: "#f5f5f4", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 },
@@ -522,6 +997,8 @@ const S = {
   optionEan: { fontSize: 11, color: "#a3a3a3", marginTop: 1 },
   optionPrice: { fontFamily: "'Fredoka', sans-serif", fontWeight: 700, fontSize: 16, color: "#ea580c", flexShrink: 0 },
   btnBack: { padding: "6px 12px", borderRadius: 8, border: "1px solid #e7e5e4", background: "#fff", color: "#78716c", fontSize: 13, cursor: "pointer", fontFamily: "'DM Sans', sans-serif" },
+
+  // Cards
   card: { background: "#fff", border: "1px solid #e7e5e4", borderRadius: 16, overflow: "hidden", animation: "slideUp 0.25s ease" },
   cardHeader: { padding: "16px 18px", borderBottom: "1px solid #f5f5f4", display: "flex", gap: 14, alignItems: "flex-start" },
   cardImg: { width: 100, height: 100, objectFit: "contain", borderRadius: 10, border: "1px solid #f5f5f4", background: "#fff", flexShrink: 0 },
@@ -533,13 +1010,24 @@ const S = {
   mapsLink: { fontSize: 12, color: "#ea580c", textDecoration: "none", display: "inline-block", marginTop: 3, fontWeight: 500 },
   listPrice: { fontSize: 12, color: "#a3a3a3", textDecoration: "line-through" },
   priceAmount: { fontFamily: "'Fredoka', sans-serif", fontWeight: 700, fontSize: 18 },
-  cardActions: { padding: "14px 18px", borderTop: "1px solid #f5f5f4" },
-  addStoreBtn: { width: 32, height: 32, borderRadius: 10, border: "1.5px solid #e7e5e4", background: "#fff", color: "#ea580c", fontSize: 18, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "all 0.15s" },
+  addStoreBtn: { width: 32, height: 32, borderRadius: 10, border: "1.5px solid #e7e5e4", background: "#fff", color: "#ea580c", fontSize: 18, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
+
+  // Buttons
   btnPrimary: { width: "100%", padding: "14px 24px", background: "#ea580c", color: "#fff", border: "none", borderRadius: 14, fontFamily: "'Fredoka', sans-serif", fontWeight: 600, fontSize: 15, cursor: "pointer" },
+  btnBlue: { padding: "12px 24px", background: "#2563eb", color: "#fff", border: "none", borderRadius: 14, fontFamily: "'Fredoka', sans-serif", fontWeight: 600, fontSize: 14, cursor: "pointer" },
   btnSmall: { padding: "8px 14px", background: "#f5f5f4", border: "1px solid #e7e5e4", borderRadius: 10, fontSize: 13, cursor: "pointer", fontFamily: "'DM Sans', sans-serif" },
+  chipBtn: { padding: "10px 16px", borderRadius: 12, border: "1.5px solid #e7e5e4", background: "#fff", color: "#78716c", fontSize: 14, cursor: "pointer", fontFamily: "'DM Sans', sans-serif", fontWeight: 500 },
+  chipBtnActive: { background: "#ea580c", color: "#fff", border: "1.5px solid #ea580c" },
+  chipBtnBlueActive: { background: "#2563eb", color: "#fff", border: "1.5px solid #2563eb" },
+
+  // States
   emptyState: { textAlign: "center", padding: "48px 20px", color: "#78716c", fontFamily: "'DM Sans', sans-serif" },
   spinner: { width: 36, height: 36, border: "3px solid #e7e5e4", borderTopColor: "#ea580c", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto" },
+  spinnerBlue: { width: 36, height: 36, border: "3px solid #e7e5e4", borderTopColor: "#2563eb", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto" },
   toast: { position: "fixed", bottom: 90, left: "50%", background: "#fff", border: "1px solid #15803d", color: "#15803d", borderRadius: 30, padding: "10px 20px", fontSize: 14, whiteSpace: "nowrap", zIndex: 999, boxShadow: "0 4px 20px rgba(0,0,0,0.1)", animation: "toastIn 0.3s cubic-bezier(0.34,1.56,0.64,1)", fontFamily: "'DM Sans', sans-serif", fontWeight: 500, transform: "translateX(-50%)" },
+  errorBox: { background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626", borderRadius: 12, padding: "12px 16px", fontSize: 13, marginBottom: 16 },
+
+  // Cart
   cartSummary: { background: "#fff", border: "1px solid #e7e5e4", borderRadius: 16, padding: 18, marginBottom: 16 },
   totalAmount: { fontFamily: "'Fredoka', sans-serif", fontWeight: 700, fontSize: 36, color: "#ea580c", letterSpacing: -1, marginTop: 4 },
   cheapestInfo: { marginTop: 10, paddingTop: 10, borderTop: "1px solid #f5f5f4", fontSize: 14, color: "#15803d", lineHeight: 1.6 },
@@ -548,16 +1036,19 @@ const S = {
   cartChip: { fontSize: 11, padding: "2px 8px", borderRadius: 6, background: "#f5f5f4", color: "#78716c" },
   cartChipBest: { background: "#dcfce7", color: "#15803d" },
   qtyBtn: { width: 30, height: 30, background: "#f5f5f4", border: "1px solid #e7e5e4", borderRadius: 8, fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" },
+
+  // AI & Forms
   aiHero: { textAlign: "center", padding: "24px 20px", marginBottom: 20 },
   formGroup: { marginBottom: 20 },
   formLabel: { display: "block", fontSize: 14, fontWeight: 600, marginBottom: 8, fontFamily: "'Fredoka', sans-serif" },
   input: { width: "100%", padding: "13px 16px", borderRadius: 14, border: "1.5px solid #e7e5e4", background: "#fff", fontSize: 14, fontFamily: "'DM Sans', sans-serif", color: "#171717" },
-  chipBtn: { padding: "10px 16px", borderRadius: 12, border: "1.5px solid #e7e5e4", background: "#fff", color: "#78716c", fontSize: 14, cursor: "pointer", fontFamily: "'DM Sans', sans-serif", fontWeight: 500 },
-  chipBtnActive: { background: "#ea580c", color: "#fff", border: "1.5px solid #ea580c" },
-  errorBox: { background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626", borderRadius: 12, padding: "12px 16px", fontSize: 13, marginBottom: 16 },
+  tipBox: { background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 12, padding: "12px 16px", fontSize: 13, color: "#15803d", lineHeight: 1.5 },
+
+  // Menu
   menuDay: { display: "flex", gap: 12, padding: "10px 14px", background: "#fff", border: "1px solid #f5f5f4", borderRadius: 12, alignItems: "center" },
   menuDayLabel: { fontFamily: "'Fredoka', sans-serif", fontWeight: 600, fontSize: 13, color: "#ea580c", minWidth: 55 },
-  tipBox: { background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 12, padding: "12px 16px", fontSize: 13, color: "#15803d", lineHeight: 1.5 },
-  ingredientRow: { display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "#fff", border: "1px solid #f5f5f4", borderRadius: 12 },
-  ingredientBtn: { display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "#fff", border: "1px solid #e7e5e4", borderRadius: 12, cursor: "pointer", width: "100%", fontFamily: "'DM Sans', sans-serif", fontSize: 13, fontWeight: 500, color: "#171717", transition: "border-color 0.15s" },
+  ingredientBtn: { display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "#fff", border: "1px solid #e7e5e4", borderRadius: 12, cursor: "pointer", width: "100%", fontFamily: "'DM Sans', sans-serif", fontSize: 13, fontWeight: 500, color: "#171717" },
+
+  // SUBE links
+  subeLink: { display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", background: "#fff", border: "1px solid #e7e5e4", borderRadius: 14, textDecoration: "none", color: "#171717", fontFamily: "'DM Sans', sans-serif" },
 };
