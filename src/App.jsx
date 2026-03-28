@@ -19,8 +19,10 @@ const fmt = (n) => Number(n).toLocaleString("es-AR", { minimumFractionDigits: 2,
 
 /* ═══════ CATEGORIES ═══════ */
 const CATEGORIES = [
-  { id: "super", label: "Supermercado", icon: "\uD83D\uDED2", color: "#ea580c" },
+  { id: "super", label: "Super", icon: "\uD83D\uDED2", color: "#ea580c" },
   { id: "transporte", label: "Transporte", icon: "\uD83D\uDE8C", color: "#2563eb" },
+  { id: "dolar", label: "Dólar", icon: "\uD83D\uDCB5", color: "#16a34a" },
+  { id: "farmacia", label: "Farmacia", icon: "\uD83D\uDC8A", color: "#9333ea" },
 ];
 
 /* ═══════ VTEX PRODUCT PARSER ═══════ */
@@ -1002,6 +1004,322 @@ function TransporteView() {
   );
 }
 
+/* ═══════════════════════════════════════════════════
+   DÓLAR SECTION
+   ═══════════════════════════════════════════════════ */
+
+const DOLAR_API = "https://dolarapi.com/v1/dolares";
+const DOLAR_CASAS = {
+  oficial: { nombre: "Oficial", color: "#6b7280", icon: "\uD83C\uDFE6" },
+  blue: { nombre: "Blue", color: "#3b82f6", icon: "\uD83D\uDCB5" },
+  bolsa: { nombre: "MEP (Bolsa)", color: "#6366f1", icon: "\uD83D\uDCC8" },
+  contadoconliqui: { nombre: "CCL", color: "#22c55e", icon: "\uD83D\uDCCA" },
+  tarjeta: { nombre: "Tarjeta", color: "#f97316", icon: "\uD83D\uDCB3" },
+  cripto: { nombre: "Cripto", color: "#eab308", icon: "\u20BF" },
+  mayorista: { nombre: "Mayorista", color: "#ec4899", icon: "\uD83C\uDFED" },
+};
+
+function DolarView() {
+  const [dolares, setDolares] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [conversorAmount, setConversorAmount] = useState("");
+  const [conversorDir, setConversorDir] = useState("usd_to_ars"); // or ars_to_usd
+
+  useEffect(() => { fetchDolares(); }, []);
+
+  const fetchDolares = async () => {
+    setLoading(true);
+    try {
+      const resp = await fetch(DOLAR_API);
+      if (!resp.ok) throw new Error("Error");
+      const data = await resp.json();
+      setDolares(data);
+    } catch {}
+    setLoading(false);
+  };
+
+  if (loading) return <div style={S.emptyState}><div style={{ ...S.spinner, borderTopColor: "#16a34a" }} /><div style={{ marginTop: 16 }}>Consultando cotizaciones...</div></div>;
+  if (!dolares) return <div style={S.emptyState}><div style={{ fontSize: 48 }}>{"\uD83D\uDCB5"}</div><div>No se pudieron cargar las cotizaciones</div><button style={{ ...S.btnBlue, background: "#16a34a", marginTop: 12 }} onClick={fetchDolares}>Reintentar</button></div>;
+
+  const oficial = dolares.find((d) => d.casa === "oficial");
+  const blue = dolares.find((d) => d.casa === "blue");
+  const blueRef = blue?.venta || 0;
+
+  // Conversor
+  const selectedRate = blue?.venta || oficial?.venta || 1;
+  const converted = conversorAmount ? (conversorDir === "usd_to_ars" ? (parseFloat(conversorAmount) * selectedRate) : (parseFloat(conversorAmount) / selectedRate)) : null;
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 28 }}>{"\uD83D\uDCB5"}</span>
+          <div>
+            <h3 style={{ fontSize: 18, fontWeight: 800, fontFamily: "'Fredoka', sans-serif", margin: 0 }}>Cotizaciones</h3>
+            <div style={{ fontSize: 12, color: "#78716c" }}>Dólar en Argentina</div>
+          </div>
+        </div>
+        <button style={S.btnSmall} onClick={fetchDolares}>{"\uD83D\uDD04"}</button>
+      </div>
+
+      {/* Main quotes grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
+        {dolares.filter((d) => ["oficial", "blue", "bolsa", "contadoconliqui", "tarjeta", "cripto"].includes(d.casa)).map((d) => {
+          const cfg = DOLAR_CASAS[d.casa] || { nombre: d.nombre, color: "#666", icon: "$" };
+          const brecha = d.casa !== "oficial" && oficial ? Math.round(((d.venta - oficial.venta) / oficial.venta) * 100) : null;
+          return (
+            <div key={d.casa} style={{ ...S.card, padding: 14, borderLeft: "4px solid " + cfg.color }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                <span style={{ fontSize: 16 }}>{cfg.icon}</span>
+                <span style={{ fontWeight: 700, fontSize: 13, color: cfg.color }}>{cfg.nombre}</span>
+                {brecha !== null && brecha > 0 && <span style={{ fontSize: 10, color: "#78716c", marginLeft: "auto" }}>+{brecha}%</span>}
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <div><div style={{ fontSize: 10, color: "#a3a3a3", textTransform: "uppercase" }}>Compra</div><div style={{ fontFamily: "'Fredoka', sans-serif", fontWeight: 700, fontSize: 17, color: "#171717" }}>${d.compra ? fmt(d.compra) : "—"}</div></div>
+                <div style={{ textAlign: "right" }}><div style={{ fontSize: 10, color: "#a3a3a3", textTransform: "uppercase" }}>Venta</div><div style={{ fontFamily: "'Fredoka', sans-serif", fontWeight: 700, fontSize: 17, color: cfg.color }}>${fmt(d.venta)}</div></div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Mayorista */}
+      {dolares.find((d) => d.casa === "mayorista") && (
+        <div style={{ ...S.card, padding: 12, marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span>{"\uD83C\uDFED"}</span><span style={{ fontWeight: 600, fontSize: 13 }}>Mayorista</span></div>
+          <div style={{ fontFamily: "'Fredoka', sans-serif", fontWeight: 700 }}>${fmt(dolares.find((d) => d.casa === "mayorista").venta)}</div>
+        </div>
+      )}
+
+      {/* Conversor */}
+      <div style={{ ...S.card, padding: 16 }}>
+        <div style={{ fontFamily: "'Fredoka', sans-serif", fontWeight: 700, fontSize: 14, marginBottom: 12 }}>{"\uD83D\uDD04"} Conversor (Blue)</div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
+          <button style={{ ...S.chipBtn, flex: 1, ...(conversorDir === "usd_to_ars" ? { background: "#16a34a", color: "#fff", borderColor: "#16a34a" } : {}) }} onClick={() => setConversorDir("usd_to_ars")}>USD → ARS</button>
+          <button style={{ ...S.chipBtn, flex: 1, ...(conversorDir === "ars_to_usd" ? { background: "#16a34a", color: "#fff", borderColor: "#16a34a" } : {}) }} onClick={() => setConversorDir("ars_to_usd")}>ARS → USD</button>
+        </div>
+        <input style={S.input} type="number" inputMode="decimal" value={conversorAmount} onChange={(e) => setConversorAmount(e.target.value)} placeholder={conversorDir === "usd_to_ars" ? "Monto en USD" : "Monto en ARS"} />
+        {converted !== null && !isNaN(converted) && (
+          <div style={{ marginTop: 12, textAlign: "center" }}>
+            <div style={{ fontSize: 12, color: "#78716c" }}>{conversorDir === "usd_to_ars" ? "Equivale a" : "Equivale a"}</div>
+            <div style={{ fontFamily: "'Fredoka', sans-serif", fontWeight: 800, fontSize: 28, color: "#16a34a" }}>
+              {conversorDir === "usd_to_ars" ? "$" + fmt(converted) : "US$ " + fmt(converted)}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {dolares[0]?.fechaActualizacion && (
+        <div style={{ textAlign: "center", fontSize: 11, color: "#a3a3a3", marginTop: 12 }}>
+          Actualizado: {new Date(dolares[0].fechaActualizacion).toLocaleString("es-AR")} · Fuente: dolarapi.com
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   FARMACIA SECTION
+   ═══════════════════════════════════════════════════ */
+
+function FarmaciaView() {
+  const [subTab, setSubTab] = useState("medicamentos");
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const searchMedicamentos = async (q) => {
+    const trimmed = (q || "").trim();
+    if (!trimmed) return;
+    setLoading(true); setError(null); setResults(null);
+    try {
+      const resp = await fetch(PROXY + "?tienda=medicamentos&q=" + encodeURIComponent(trimmed));
+      if (!resp.ok) throw new Error("Error " + resp.status);
+      const data = await resp.json();
+      setResults({ type: "medicamentos", items: data.productos || [], url: data.url });
+    } catch (e) {
+      setError(e.message);
+    }
+    setLoading(false);
+  };
+
+  const searchFarmacity = async (q) => {
+    const trimmed = (q || "").trim();
+    if (!trimmed) return;
+    setLoading(true); setError(null); setResults(null);
+    try {
+      const resp = await fetch(PROXY + "?tienda=farmacity&q=" + encodeURIComponent(trimmed));
+      if (!resp.ok) throw new Error("Error " + resp.status);
+      const data = await resp.json();
+      const products = (data.products || []).slice(0, 15).map((p) => {
+        try {
+          const nombre = p.productName || null;
+          if (!nombre) return null;
+          let precio = null, listPrice = null;
+          try {
+            const offer = p.items[0].sellers[0].commertialOffer;
+            precio = offer.spotPrice || offer.Price || null;
+            listPrice = offer.ListPrice || null;
+            if (listPrice && precio && listPrice <= precio) listPrice = null;
+          } catch {}
+          let imagen = null;
+          try { imagen = p.items?.[0]?.images?.[0]?.imageUrl?.replace("http:", "https:"); } catch {}
+          return { nombre, precio, listPrice, imagen, marca: p.brand, link: p.link ? "https://www.farmacity.com" + p.link : null };
+        } catch { return null; }
+      }).filter(Boolean);
+      setResults({ type: "farmacity", items: products });
+    } catch (e) {
+      setError(e.message);
+    }
+    setLoading(false);
+  };
+
+  const doSearch = () => {
+    if (subTab === "medicamentos") searchMedicamentos(query);
+    else searchFarmacity(query);
+  };
+
+  const handleTabChange = (t) => {
+    setSubTab(t);
+    setResults(null);
+    setError(null);
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+        <span style={{ fontSize: 28 }}>{"\uD83D\uDC8A"}</span>
+        <div>
+          <h3 style={{ fontSize: 18, fontWeight: 800, fontFamily: "'Fredoka', sans-serif", margin: 0 }}>Farmacia</h3>
+          <div style={{ fontSize: 12, color: "#78716c" }}>Medicamentos y productos de farmacia</div>
+        </div>
+      </div>
+
+      {/* Sub-tabs */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        {[["medicamentos", "\uD83D\uDC8A", "Medicamentos"], ["productos", "\uD83D\uDED2", "Productos"]].map(([id, icon, label]) => (
+          <button key={id} style={{ ...S.chipBtn, flex: 1, ...(subTab === id ? { background: "#9333ea", color: "#fff", borderColor: "#9333ea" } : {}) }} onClick={() => handleTabChange(id)}>
+            {icon} {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Search */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <input style={S.searchInput} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && doSearch()} placeholder={subTab === "medicamentos" ? 'Ej: "ibuprofeno", "omeprazol"' : 'Ej: "protector solar", "shampoo"'} />
+        <button style={{ ...S.searchBtn, background: "#9333ea" }} onClick={doSearch} disabled={loading}>{loading ? "..." : "\uD83D\uDD0D"}</button>
+      </div>
+
+      {/* Quick searches */}
+      {!loading && !results && (
+        <div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 20, justifyContent: "center" }}>
+            {(subTab === "medicamentos"
+              ? ["ibuprofeno", "paracetamol", "amoxicilina", "omeprazol", "loratadina", "diclofenac"]
+              : ["protector solar", "shampoo", "pasta dental", "pañales", "vitamina C", "alcohol en gel"]
+            ).map((s) => (
+              <button key={s} style={S.suggestionChip} onClick={() => { setQuery(s); subTab === "medicamentos" ? searchMedicamentos(s) : searchFarmacity(s); }}>{s}</button>
+            ))}
+          </div>
+
+          {/* Links */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <a href="https://www.argentina.gob.ar/precios-de-medicamentos" target="_blank" rel="noopener noreferrer" style={{ ...S.subeLink, borderColor: "#e9d5ff" }}>
+              <span style={{ fontSize: 24 }}>{"\uD83C\uDFDB\uFE0F"}</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>Buscador Nacional de Medicamentos</div>
+                <div style={{ fontSize: 12, color: "#78716c" }}>Precios oficiales + descuentos PAMI</div>
+              </div>
+              <span style={{ color: "#9333ea" }}>{"\u203A"}</span>
+            </a>
+            <a href="https://www.google.com/maps/search/farmacia+cerca+de+mi+ubicaci%C3%B3n" target="_blank" rel="noopener noreferrer" style={{ ...S.subeLink, borderColor: "#e9d5ff" }}>
+              <span style={{ fontSize: 24 }}>{"\uD83D\uDCCD"}</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>Farmacias cercanas</div>
+                <div style={{ fontSize: 12, color: "#78716c" }}>Buscar en Google Maps</div>
+              </div>
+              <span style={{ color: "#9333ea" }}>{"\u203A"}</span>
+            </a>
+          </div>
+        </div>
+      )}
+
+      {/* Loading */}
+      {loading && <div style={S.emptyState}><div style={{ ...S.spinner, borderTopColor: "#9333ea" }} /><div style={{ marginTop: 16 }}>{subTab === "medicamentos" ? "Buscando medicamentos..." : "Buscando en Farmacity..."}</div></div>}
+
+      {/* Error */}
+      {error && <div style={S.errorBox}>{error}</div>}
+
+      {/* Medicamentos results */}
+      {results?.type === "medicamentos" && (
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <span style={{ fontSize: 13, color: "#78716c" }}>{results.items.length} resultado{results.items.length !== 1 ? "s" : ""}</span>
+            {results.url && <a href={results.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "#9333ea", textDecoration: "none", fontWeight: 600 }}>Ver en sitio original {"\u203A"}</a>}
+          </div>
+          {results.items.length === 0 && <div style={S.emptyState}><div style={{ fontSize: 48 }}>{"\uD83D\uDE45"}</div><div>No se encontraron medicamentos</div></div>}
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {results.items.map((med, i) => (
+              <div key={i} style={{ ...S.card, padding: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: "'Fredoka', sans-serif", fontWeight: 700, fontSize: 14, color: "#171717" }}>{med.nombre}</div>
+                    {med.presentacion && <div style={{ fontSize: 12, color: "#78716c", marginTop: 2 }}>{med.presentacion}</div>}
+                    {med.laboratorio && <div style={{ fontSize: 11, color: "#a3a3a3", marginTop: 1 }}>{med.laboratorio}</div>}
+                    {med.droga && <div style={{ fontSize: 11, color: "#9333ea", marginTop: 2 }}>Droga: {med.droga}</div>}
+                  </div>
+                  <div style={{ textAlign: "right", flexShrink: 0 }}>
+                    {med.precioFarmacia && (
+                      <div>
+                        <div style={{ fontSize: 10, color: "#78716c", textTransform: "uppercase" }}>Farmacia</div>
+                        <div style={{ fontFamily: "'Fredoka', sans-serif", fontWeight: 700, fontSize: 17, color: "#171717" }}>${fmt(med.precioFarmacia)}</div>
+                      </div>
+                    )}
+                    {med.precioPami && (
+                      <div style={{ marginTop: 4 }}>
+                        <div style={{ fontSize: 10, color: "#15803d", textTransform: "uppercase" }}>PAMI</div>
+                        <div style={{ fontFamily: "'Fredoka', sans-serif", fontWeight: 700, fontSize: 15, color: "#15803d" }}>${fmt(med.precioPami)}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {med.link && <a href={med.link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "#9333ea", textDecoration: "none", display: "inline-block", marginTop: 6 }}>Ver detalle {"\u203A"}</a>}
+              </div>
+            ))}
+          </div>
+          <div style={{ ...S.tipBox, background: "#f5f3ff", borderColor: "#ddd6fe", color: "#7c3aed", marginTop: 16 }}>
+            {"\uD83C\uDFDB\uFE0F"} Verificá precios en el <a href="https://www.argentina.gob.ar/precios-de-medicamentos" target="_blank" rel="noopener noreferrer" style={{ color: "#7c3aed", fontWeight: 700 }}>Buscador Nacional de Medicamentos</a> para datos oficiales.
+          </div>
+        </div>
+      )}
+
+      {/* Farmacity results */}
+      {results?.type === "farmacity" && (
+        <div>
+          <div style={{ fontSize: 13, color: "#78716c", marginBottom: 10 }}>{results.items.length} resultado{results.items.length !== 1 ? "s" : ""} en Farmacity</div>
+          {results.items.length === 0 && <div style={S.emptyState}><div style={{ fontSize: 48 }}>{"\uD83D\uDE45"}</div><div>No se encontraron productos</div></div>}
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {results.items.map((p, i) => (
+              <a key={i} href={p.link || "#"} target="_blank" rel="noopener noreferrer" style={{ ...S.optionCard, textDecoration: "none", color: "#171717" }}>
+                {p.imagen ? <img src={p.imagen} alt="" style={S.optionImg} onError={(e) => (e.target.style.display = "none")} /> : <div style={S.optionImgPlaceholder}>{"\uD83D\uDC8A"}</div>}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={S.optionName}>{p.nombre}</div>
+                  {p.marca && <div style={S.optionBrand}>{p.marca}</div>}
+                </div>
+                <div style={{ textAlign: "right", flexShrink: 0 }}>
+                  {p.listPrice && p.listPrice > p.precio && <div style={S.listPrice}>${fmt(p.listPrice)}</div>}
+                  {p.precio && <div style={{ ...S.optionPrice, color: "#9333ea" }}>${fmt(p.precio)}</div>}
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ═══════ CONFIG VIEW ═══════ */
 function ConfigView() {
   return (
@@ -1242,6 +1560,12 @@ export default function SuperMamu() {
         {/* TRANSPORTE CONTENT */}
         {category === "transporte" && transporteTab === "transporte" && <TransporteView />}
         {category === "transporte" && transporteTab === "config" && <ConfigView />}
+
+        {/* DOLAR CONTENT */}
+        {category === "dolar" && <DolarView />}
+
+        {/* FARMACIA CONTENT */}
+        {category === "farmacia" && <FarmaciaView />}
       </div>
 
       {toast && <div style={S.toast}>{toast}</div>}
