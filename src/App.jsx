@@ -1674,6 +1674,8 @@ function MercadoLibreView() {
         return data.access_token;
       }
     } catch {}
+    // Refresh failed → clear session
+    logout();
     return null;
   };
 
@@ -1687,7 +1689,14 @@ function MercadoLibreView() {
   };
 
   const meliApi = async (path, token) => {
-    const resp = await fetch(PROXY + "?tienda=meli-api&path=" + encodeURIComponent(path) + (token ? "&access_token=" + encodeURIComponent(token) : ""));
+    let resp = await fetch(PROXY + "?tienda=meli-api&path=" + encodeURIComponent(path) + (token ? "&access_token=" + encodeURIComponent(token) : ""));
+    // If 401, try refreshing token once
+    if (resp.status === 401 || (resp.ok && (await resp.clone().json()).message === "unauthorized")) {
+      const newToken = await refreshToken();
+      if (newToken) {
+        resp = await fetch(PROXY + "?tienda=meli-api&path=" + encodeURIComponent(path) + "&access_token=" + encodeURIComponent(newToken));
+      } else { return null; }
+    }
     if (!resp.ok) return null;
     return await resp.json();
   };
@@ -1746,7 +1755,9 @@ function MercadoLibreView() {
       let data;
       if (token) {
         data = await meliApi("/sites/MLA/search?q=" + encodeURIComponent(trimmed) + "&limit=10&sort=relevance", token);
-      } else {
+      }
+      if (!data || data.error || data.message === "forbidden") {
+        // Fallback: try worker proxy with client_credentials
         const resp = await fetch(PROXY + "?tienda=mercadolibre&q=" + encodeURIComponent(trimmed));
         if (resp.ok) data = await resp.json();
       }
@@ -1758,13 +1769,16 @@ function MercadoLibreView() {
           condicion: item.condition === "new" ? "Nuevo" : item.condition === "used" ? "Usado" : item.condition,
           vendedor: item.seller?.nickname || null,
         }));
-        setResults({ source: "mercadolibre", total: data.paging?.total || 0, productos });
-      } else if (data && data.productos) {
-        setResults(data);
+        setResults({ source: "mercadolibre", total: data.paging?.total || 0, productos, query: trimmed });
+      } else if (data && data.productos && data.productos.length > 0) {
+        setResults({ ...data, query: trimmed });
       } else {
-        setResults({ productos: [], total: 0, error: data?.error || "Sin resultados" });
+        // All failed - show web link fallback
+        setResults({ productos: [], total: 0, query: trimmed, openWeb: true });
       }
-    } catch {}
+    } catch {
+      setResults({ productos: [], total: 0, query: trimmed, openWeb: true });
+    }
     setLoading(false);
   };
 
@@ -1821,9 +1835,9 @@ function MercadoLibreView() {
               {results.error && (
                 <div style={{ ...S.tipBox, background: "#fff7ed", borderColor: "#fed7aa", color: "#c2410c", marginBottom: 12 }}>
                   {!meliToken ? (
-                    <span>{"\uD83D\uDD11"} Para buscar productos, <a href={loginUrl} style={{ color: "#3483fa", fontWeight: 700 }}>vinculá tu cuenta de MercadoLibre</a> primero.</span>
+                    <span>{"\uD83D\uDD11"} <a href={loginUrl} style={{ color: "#3483fa", fontWeight: 700 }}>Vinculá tu cuenta de MercadoLibre</a> para buscar productos desde SuperMamu.</span>
                   ) : (
-                    <span>{"\u26A0\uFE0F"} Error: {results.error}</span>
+                    <span>{"\u26A0\uFE0F"} {results.error}. <a href={"https://listado.mercadolibre.com.ar/" + encodeURIComponent(results.query || "").replace(/%20/g, "-")} target="_blank" rel="noopener noreferrer" style={{ color: "#3483fa", fontWeight: 700 }}>Ver en MercadoLibre</a></span>
                   )}
                 </div>
               )}
@@ -1850,7 +1864,18 @@ function MercadoLibreView() {
                 </div>
               )}
               {results.productos?.length === 0 && !results.error && (
-                <div style={S.emptyState}><div style={{ fontSize: 48 }}>{"\uD83D\uDD0D"}</div><div>No se encontraron productos</div></div>
+                <div style={{ textAlign: "center" }}>
+                  {results.openWeb ? (
+                    <div>
+                      <div style={S.emptyState}><div style={{ fontSize: 48 }}>{"\uD83D\uDFE1"}</div><div style={{ fontWeight: 600 }}>No pudimos cargar resultados</div><div style={{ fontSize: 13, color: "#a3a3a3", marginTop: 4 }}>Pero podés ver los resultados directo en MercadoLibre</div></div>
+                      <a href={"https://listado.mercadolibre.com.ar/" + encodeURIComponent(results.query || "").replace(/%20/g, "-")} target="_blank" rel="noopener noreferrer" style={{ ...S.btnPrimary, background: "#3483fa", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, textDecoration: "none", padding: "14px 24px", fontSize: 15 }}>
+                        {"\uD83D\uDFE1"} Ver en MercadoLibre
+                      </a>
+                    </div>
+                  ) : (
+                    <div style={S.emptyState}><div style={{ fontSize: 48 }}>{"\uD83D\uDD0D"}</div><div>No se encontraron productos</div></div>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -2013,6 +2038,46 @@ function ClimaView({ userProfile }) {
   const [ubicacion, setUbicacion] = useState(null);
   const [recomendacion, setRecomendacion] = useState(null);
   const [loadingRec, setLoadingRec] = useState(false);
+  const [cityQuery, setCityQuery] = useState("");
+  const [cityResults, setCityResults] = useState(null);
+  const [searchingCity, setSearchingCity] = useState(false);
+  const [savedCities, setSavedCities] = useState([]);
+
+  // Load saved cities
+  useEffect(() => {
+    try { const sc = localStorage.getItem("supermamu_ciudades"); if (sc) setSavedCities(JSON.parse(sc)); } catch {}
+  }, []);
+  useEffect(() => { try { localStorage.setItem("supermamu_ciudades", JSON.stringify(savedCities)); } catch {} }, [savedCities]);
+
+  const searchCity = async () => {
+    const q = cityQuery.trim();
+    if (!q) return;
+    setSearchingCity(true); setCityResults(null);
+    try {
+      const resp = await fetch(TRANSPORTE_PROXY + "?tipo=geo&q=" + encodeURIComponent(q));
+      if (resp.ok) { const data = await resp.json(); setCityResults(Array.isArray(data) ? data : []); }
+    } catch {}
+    setSearchingCity(false);
+  };
+
+  const selectCity = (city) => {
+    const loc = { lat: city.lat, lon: city.lon, name: city.name + (city.state ? ", " + city.state : "") };
+    setUbicacion(loc); setCityResults(null); setCityQuery("");
+    fetchClima(city.lat, city.lon);
+  };
+
+  const saveCity = (city) => {
+    const key = city.lat + "," + city.lon;
+    if (savedCities.some((c) => c.lat + "," + c.lon === key)) return;
+    setSavedCities((prev) => [...prev, { name: city.name + (city.state ? ", " + city.state : ""), lat: city.lat, lon: city.lon }]);
+  };
+
+  const removeCity = (idx) => setSavedCities((prev) => prev.filter((_, i) => i !== idx));
+
+  const loadSavedCity = (city) => {
+    setUbicacion({ lat: city.lat, lon: city.lon, name: city.name });
+    fetchClima(city.lat, city.lon);
+  };
 
   const fetchClima = async (lat, lon) => {
     setLoading(true); setError(null); setRecomendacion(null);
@@ -2104,14 +2169,54 @@ function ClimaView({ userProfile }) {
   if (!ubicacion && !loading && !error) {
     return (
       <div>
-        <div style={S.emptyState}>
-          <div style={{ fontSize: 56, marginBottom: 12 }}>{"\u2600\uFE0F"}</div>
-          <div style={{ fontWeight: 600 }}>Pronóstico del tiempo</div>
-          <div style={{ fontSize: 13, color: "#a3a3a3", marginTop: 4, maxWidth: 260, margin: "4px auto 0", lineHeight: 1.5 }}>
-            Permití el acceso a tu ubicación para ver el clima
-          </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+          <span style={{ fontSize: 28 }}>{"\u2600\uFE0F"}</span>
+          <h3 style={{ fontSize: 18, fontWeight: 800, fontFamily: "'Fredoka', sans-serif", margin: 0 }}>Clima</h3>
         </div>
-        <button style={{ ...S.btnPrimary, width: "100%", background: "#f59e0b" }} onClick={getLocation}>{"\uD83D\uDCCD"} Obtener mi ubicación</button>
+
+        {/* City search */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          <div style={{ flex: 1, position: "relative" }}>
+            <input style={{ ...S.searchInput, paddingRight: 36, width: "100%" }} value={cityQuery} onChange={(e) => setCityQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && searchCity()} placeholder='Buscar localidad: ej "Quilmes"' />
+            {cityQuery && <button style={S.clearBtn} onClick={() => { setCityQuery(""); setCityResults(null); }}>{"\u2715"}</button>}
+          </div>
+          <button style={{ ...S.searchBtn, background: "#f59e0b" }} onClick={searchCity} disabled={searchingCity}>{searchingCity ? "..." : "\uD83D\uDD0D"}</button>
+        </div>
+
+        {/* City search results */}
+        {cityResults && cityResults.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 16 }}>
+            {cityResults.map((c, i) => (
+              <div key={i} style={{ ...S.card, padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <button style={{ flex: 1, textAlign: "left", background: "none", border: "none", cursor: "pointer", fontFamily: "'DM Sans', sans-serif", fontSize: 14 }} onClick={() => selectCity(c)}>
+                  {"\uD83D\uDCCD"} {c.name}{c.state ? ", " + c.state : ""} <span style={{ fontSize: 11, color: "#a3a3a3" }}>({c.country})</span>
+                </button>
+                <button style={{ ...S.btnSmall, fontSize: 16, padding: "2px 8px" }} onClick={() => saveCity(c)} title="Guardar">{"\u2606"}</button>
+              </div>
+            ))}
+          </div>
+        )}
+        {cityResults && cityResults.length === 0 && <div style={{ fontSize: 13, color: "#a3a3a3", marginBottom: 12, textAlign: "center" }}>No se encontraron localidades</div>}
+
+        {/* Saved cities */}
+        {savedCities.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: "#78716c" }}>{"\u2B50"} Mis localidades</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {savedCities.map((c, i) => (
+                <div key={i} style={{ ...S.card, padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <button style={{ flex: 1, textAlign: "left", background: "none", border: "none", cursor: "pointer", fontFamily: "'DM Sans', sans-serif", fontSize: 14, color: "#171717" }} onClick={() => loadSavedCity(c)}>
+                    {"\uD83D\uDCCD"} {c.name}
+                  </button>
+                  <button style={{ border: "none", background: "transparent", color: "#a3a3a3", cursor: "pointer", fontSize: 14 }} onClick={() => removeCity(i)}>{"\u2715"}</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* GPS button */}
+        <button style={{ ...S.btnPrimary, width: "100%", background: "#f59e0b" }} onClick={getLocation}>{"\uD83D\uDCCD"} Usar mi ubicación actual</button>
       </div>
     );
   }
@@ -2139,11 +2244,13 @@ function ClimaView({ userProfile }) {
         <span style={{ fontSize: 28 }}>{"\u2600\uFE0F"}</span>
         <div>
           <h3 style={{ fontSize: 18, fontWeight: 800, fontFamily: "'Fredoka', sans-serif", margin: 0 }}>Clima</h3>
-          <div style={{ fontSize: 12, color: "#78716c" }}>{clima.city || "Tu ubicación"}</div>
+          <div style={{ fontSize: 12, color: "#78716c" }}>{clima.city || ubicacion?.name || "Tu ubicación"}</div>
         </div>
         <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+          <button style={{ ...S.btnSmall, fontSize: 12 }} onClick={() => { if (clima.city) saveCity({ name: clima.city, state: "", lat: ubicacion?.lat, lon: ubicacion?.lon }); }} title="Guardar localidad">{"\u2B50"}</button>
           <button style={{ ...S.btnSmall, color: "#25d366", fontSize: 12 }} onClick={shareClimaWhatsApp}>{"\uD83D\uDCE4"}</button>
           <button style={S.btnSmall} onClick={() => fetchClima(ubicacion.lat, ubicacion.lon)}>{"\uD83D\uDD04"}</button>
+          <button style={{ ...S.btnSmall, fontSize: 12 }} onClick={() => { setUbicacion(null); setClima(null); setRecomendacion(null); }}>{"\u2190"}</button>
         </div>
       </div>
 

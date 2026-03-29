@@ -64,6 +64,12 @@ export default {
           return await handleClima(lat, lon, env.OPENWEATHER_API_KEY);
         }
 
+        case 'geo': {
+          const q = url.searchParams.get('q');
+          if (!q) return jsonResponse({ error: 'Falta parámetro q' }, 400);
+          return await handleGeo(q, env.OPENWEATHER_API_KEY);
+        }
+
         default:
           return jsonResponse({ error: 'Tipo no válido' }, 400);
       }
@@ -238,6 +244,27 @@ async function handleTarifas() {
       },
     },
   });
+}
+
+/**
+ * Geocoding: search cities by name
+ */
+async function handleGeo(query, apiKey) {
+  if (!apiKey) return jsonResponse({ error: 'NO_API_KEY' });
+  try {
+    const resp = await fetch(`https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(query)},AR&limit=5&appid=${apiKey}`);
+    if (!resp.ok) {
+      // Try without country restriction
+      const resp2 = await fetch(`https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(query)}&limit=5&appid=${apiKey}`);
+      if (!resp2.ok) return jsonResponse({ error: 'Error buscando localidad' }, 500);
+      const data2 = await resp2.json();
+      return jsonResponse(data2.map(r => ({ name: r.name, state: r.state || '', country: r.country, lat: r.lat, lon: r.lon })));
+    }
+    const data = await resp.json();
+    return jsonResponse(data.map(r => ({ name: r.name, state: r.state || '', country: r.country, lat: r.lat, lon: r.lon })));
+  } catch (err) {
+    return jsonResponse({ error: err.message }, 500);
+  }
 }
 
 /**
