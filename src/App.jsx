@@ -1715,9 +1715,19 @@ function MercadoLibreView() {
     const token = await getValidToken();
     if (!token) { setLoadingAccount(false); return; }
     try {
-      const data = await meliApi("/users/" + meliToken.user_id + "/bookmarks?limit=20", token);
-      if (data) setFavorites(Array.isArray(data) ? data : data.results || []);
-    } catch {}
+      // Try bookmarks endpoint
+      let data = await meliApi("/users/" + meliToken.user_id + "/bookmarks?limit=20", token);
+      // If 404, try alternate endpoints
+      if (!data || data.error) {
+        data = await meliApi("/users/" + meliToken.user_id + "/items/bookmarks?limit=20", token);
+      }
+      if (data && !data.error) {
+        const items = Array.isArray(data) ? data : data.results || data.bookmarks || [];
+        setFavorites(items);
+      } else {
+        setFavorites([]);
+      }
+    } catch { setFavorites([]); }
     setLoadingAccount(false);
   };
 
@@ -1731,11 +1741,28 @@ function MercadoLibreView() {
     if (!trimmed) return;
     setLoading(true); setResults(null);
     try {
-      const resp = await fetch(PROXY + "?tienda=mercadolibre&q=" + encodeURIComponent(trimmed));
-      if (resp.ok) {
-        const data = await resp.json();
-        if (data.error) { setResults({ productos: [], total: 0, error: data.error }); }
-        else { setResults(data); }
+      // Use user's token if available (avoids 403), fallback to worker proxy
+      const token = await getValidToken();
+      let data;
+      if (token) {
+        data = await meliApi("/sites/MLA/search?q=" + encodeURIComponent(trimmed) + "&limit=10&sort=relevance", token);
+      } else {
+        const resp = await fetch(PROXY + "?tienda=mercadolibre&q=" + encodeURIComponent(trimmed));
+        if (resp.ok) data = await resp.json();
+      }
+      if (data && data.results) {
+        const productos = (data.results || []).slice(0, 10).map((item) => ({
+          id: item.id, nombre: item.title, precio: item.price, moneda: item.currency_id,
+          imagen: item.thumbnail ? item.thumbnail.replace("http:", "https:") : null,
+          link: item.permalink, envioGratis: item.shipping?.free_shipping || false,
+          condicion: item.condition === "new" ? "Nuevo" : item.condition === "used" ? "Usado" : item.condition,
+          vendedor: item.seller?.nickname || null,
+        }));
+        setResults({ source: "mercadolibre", total: data.paging?.total || 0, productos });
+      } else if (data && data.productos) {
+        setResults(data);
+      } else {
+        setResults({ productos: [], total: 0, error: data?.error || "Sin resultados" });
       }
     } catch {}
     setLoading(false);
@@ -1791,7 +1818,18 @@ function MercadoLibreView() {
 
           {results && (
             <div>
-              <div style={{ fontSize: 13, color: "#78716c", marginBottom: 10 }}>{results.total?.toLocaleString("es-AR")} resultado{results.total !== 1 ? "s" : ""}</div>
+              {results.error && (
+                <div style={{ ...S.tipBox, background: "#fff7ed", borderColor: "#fed7aa", color: "#c2410c", marginBottom: 12 }}>
+                  {!meliToken ? (
+                    <span>{"\uD83D\uDD11"} Para buscar productos, <a href={loginUrl} style={{ color: "#3483fa", fontWeight: 700 }}>vinculá tu cuenta de MercadoLibre</a> primero.</span>
+                  ) : (
+                    <span>{"\u26A0\uFE0F"} Error: {results.error}</span>
+                  )}
+                </div>
+              )}
+              {results.productos?.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 13, color: "#78716c", marginBottom: 10 }}>{results.total?.toLocaleString("es-AR")} resultado{results.total !== 1 ? "s" : ""}</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {(results.productos || []).map((p, i) => (
                   <a key={i} href={p.link} target="_blank" rel="noopener noreferrer" style={{ ...S.optionCard, textDecoration: "none", color: "#171717" }}>
@@ -1809,6 +1847,11 @@ function MercadoLibreView() {
                   </a>
                 ))}
               </div>
+                </div>
+              )}
+              {results.productos?.length === 0 && !results.error && (
+                <div style={S.emptyState}><div style={{ fontSize: 48 }}>{"\uD83D\uDD0D"}</div><div>No se encontraron productos</div></div>
+              )}
             </div>
           )}
         </div>
