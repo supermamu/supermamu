@@ -51,7 +51,7 @@ export default {
       }
 
       if (tienda === 'mercadolibre') {
-        return await handleMercadoLibre(query);
+        return await handleMercadoLibre(query, env);
       }
 
       // ── VTEX stores ──
@@ -433,16 +433,41 @@ function parseMedicamentosHtml(html) {
 // MERCADOLIBRE — Public Search API
 // ═══════════════════════════════════════════════════════
 
-async function handleMercadoLibre(query) {
+async function handleMercadoLibre(query, env) {
   try {
-    const searchUrl = `https://api.mercadolibre.com/sites/MLA/search?q=${encodeURIComponent(query)}&limit=10&sort=relevance`;
+    // Try with app credentials first (higher rate limit, avoids 403)
+    const clientId = env.MELI_CLIENT_ID || '';
+    let searchUrl = `https://api.mercadolibre.com/sites/MLA/search?q=${encodeURIComponent(query)}&limit=10&sort=relevance`;
 
-    const resp = await fetch(searchUrl, {
-      headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'SuperMamu/1.0',
-      },
-    });
+    // First attempt: get an app token via client_credentials
+    let accessToken = null;
+    if (clientId && env.MELI_CLIENT_SECRET) {
+      try {
+        const tokenResp = await fetch('https://api.mercadolibre.com/oauth/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({
+            grant_type: 'client_credentials',
+            client_id: clientId,
+            client_secret: env.MELI_CLIENT_SECRET,
+          }),
+        });
+        if (tokenResp.ok) {
+          const tokenData = await tokenResp.json();
+          accessToken = tokenData.access_token;
+        }
+      } catch {}
+    }
+
+    const headers = {
+      'Accept': 'application/json',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36',
+    };
+    if (accessToken) {
+      headers['Authorization'] = `Bearer ${accessToken}`;
+    }
+
+    const resp = await fetch(searchUrl, { headers });
 
     if (!resp.ok) {
       return jsonResponse({ source: 'mercadolibre', error: 'Error ' + resp.status, productos: [] });

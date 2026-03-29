@@ -1737,21 +1737,11 @@ function MercadoLibreView() {
     if (!trimmed) return;
     setLoading(true); setResults(null);
     try {
-      const resp = await fetch("https://api.mercadolibre.com/sites/MLA/search?q=" + encodeURIComponent(trimmed) + "&limit=10&sort=relevance");
+      const resp = await fetch(PROXY + "?tienda=mercadolibre&q=" + encodeURIComponent(trimmed));
       if (resp.ok) {
         const data = await resp.json();
-        const productos = (data.results || []).slice(0, 10).map((item) => ({
-          id: item.id,
-          nombre: item.title,
-          precio: item.price,
-          moneda: item.currency_id,
-          imagen: item.thumbnail ? item.thumbnail.replace("http:", "https:") : null,
-          link: item.permalink,
-          envioGratis: item.shipping?.free_shipping || false,
-          condicion: item.condition === "new" ? "Nuevo" : item.condition === "used" ? "Usado" : item.condition,
-          vendedor: item.seller?.nickname || null,
-        }));
-        setResults({ source: "mercadolibre", total: data.paging?.total || 0, productos });
+        if (data.error) { setResults({ productos: [], total: 0, error: data.error }); }
+        else { setResults(data); }
       }
     } catch {}
     setLoading(false);
