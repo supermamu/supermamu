@@ -20,12 +20,16 @@ const fmt = (n) => Number(n).toLocaleString("es-AR", { minimumFractionDigits: 2,
 /* ═══════ CATEGORIES ═══════ */
 const CATEGORIES = [
   { id: "super", label: "Super", icon: "\uD83D\uDED2", color: "#ea580c" },
+  { id: "meli", label: "MeLi", icon: "\uD83D\uDFE1", color: "#3483fa" },
   { id: "transporte", label: "Transporte", icon: "\uD83D\uDE8C", color: "#2563eb" },
   { id: "dolar", label: "Dólar", icon: "\uD83D\uDCB5", color: "#16a34a" },
   { id: "farmacia", label: "Farmacia", icon: "\uD83D\uDC8A", color: "#9333ea" },
   { id: "servicios", label: "Servicios", icon: "\uD83D\uDCCD", color: "#0891b2" },
   { id: "clima", label: "Clima", icon: "\u2600\uFE0F", color: "#f59e0b" },
 ];
+
+const MELI_CLIENT_ID = "782955723270657";
+const MELI_REDIRECT_URI = "https://supermamu.com.ar/callback";
 
 /* ═══════ VTEX PRODUCT PARSER ═══════ */
 function parseVtexProduct(producto) {
@@ -1603,6 +1607,308 @@ function FarmaciaView() {
 }
 
 /* ═══════════════════════════════════════════════════
+   MERCADOLIBRE SECTION
+   ═══════════════════════════════════════════════════ */
+
+function MercadoLibreView() {
+  const [subTab, setSubTab] = useState("buscar");
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [meliToken, setMeliToken] = useState(null);
+  const [meliUser, setMeliUser] = useState(null);
+  const [purchases, setPurchases] = useState(null);
+  const [favorites, setFavorites] = useState(null);
+  const [loadingAccount, setLoadingAccount] = useState(false);
+
+  // Load saved token
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("supermamu_meli");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.access_token) {
+          setMeliToken(parsed);
+          fetchMeliUser(parsed.access_token);
+        }
+      }
+    } catch {}
+  }, []);
+
+  // Handle OAuth callback
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+    if (code && !meliToken) {
+      exchangeToken(code);
+      // Clean URL
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
+
+  const exchangeToken = async (code) => {
+    setLoadingAccount(true);
+    try {
+      const resp = await fetch(PROXY + "?tienda=meli-token&code=" + encodeURIComponent(code));
+      const data = await resp.json();
+      if (data.access_token) {
+        const tokenData = { ...data, saved_at: Date.now() };
+        setMeliToken(tokenData);
+        localStorage.setItem("supermamu_meli", JSON.stringify(tokenData));
+        fetchMeliUser(data.access_token);
+      }
+    } catch {}
+    setLoadingAccount(false);
+  };
+
+  const refreshToken = async () => {
+    if (!meliToken?.refresh_token) return null;
+    try {
+      const resp = await fetch(PROXY + "?tienda=meli-refresh&refresh_token=" + encodeURIComponent(meliToken.refresh_token));
+      const data = await resp.json();
+      if (data.access_token) {
+        const tokenData = { ...data, saved_at: Date.now() };
+        setMeliToken(tokenData);
+        localStorage.setItem("supermamu_meli", JSON.stringify(tokenData));
+        return data.access_token;
+      }
+    } catch {}
+    return null;
+  };
+
+  const getValidToken = async () => {
+    if (!meliToken) return null;
+    const elapsed = (Date.now() - (meliToken.saved_at || 0)) / 1000;
+    if (elapsed > (meliToken.expires_in || 21600) - 300) {
+      return await refreshToken();
+    }
+    return meliToken.access_token;
+  };
+
+  const fetchMeliUser = async (token) => {
+    try {
+      const resp = await fetch("https://api.mercadolibre.com/users/me", {
+        headers: { Authorization: "Bearer " + token },
+      });
+      if (resp.ok) setMeliUser(await resp.json());
+    } catch {}
+  };
+
+  const fetchPurchases = async () => {
+    setLoadingAccount(true);
+    const token = await getValidToken();
+    if (!token) { setLoadingAccount(false); return; }
+    try {
+      const resp = await fetch("https://api.mercadolibre.com/orders/search?seller=" + meliToken.user_id + "&sort=date_desc&limit=10&buyer=" + meliToken.user_id, {
+        headers: { Authorization: "Bearer " + token },
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        setPurchases(data.results || []);
+      }
+    } catch {}
+    setLoadingAccount(false);
+  };
+
+  const fetchFavorites = async () => {
+    setLoadingAccount(true);
+    const token = await getValidToken();
+    if (!token) { setLoadingAccount(false); return; }
+    try {
+      const resp = await fetch("https://api.mercadolibre.com/users/" + meliToken.user_id + "/bookmarks?limit=20", {
+        headers: { Authorization: "Bearer " + token },
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        setFavorites(Array.isArray(data) ? data : data.results || []);
+      }
+    } catch {}
+    setLoadingAccount(false);
+  };
+
+  const logout = () => {
+    setMeliToken(null); setMeliUser(null); setPurchases(null); setFavorites(null);
+    localStorage.removeItem("supermamu_meli");
+  };
+
+  const searchML = async (q) => {
+    const trimmed = (q || "").trim();
+    if (!trimmed) return;
+    setLoading(true); setResults(null);
+    try {
+      const resp = await fetch(PROXY + "?tienda=mercadolibre&q=" + encodeURIComponent(trimmed));
+      if (resp.ok) {
+        const data = await resp.json();
+        setResults(data);
+      }
+    } catch {}
+    setLoading(false);
+  };
+
+  const loginUrl = "https://auth.mercadolibre.com.ar/authorization?response_type=code&client_id=" + MELI_CLIENT_ID + "&redirect_uri=" + encodeURIComponent(MELI_REDIRECT_URI);
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+        <span style={{ fontSize: 28 }}>{"\uD83D\uDFE1"}</span>
+        <div>
+          <h3 style={{ fontSize: 18, fontWeight: 800, fontFamily: "'Fredoka', sans-serif", margin: 0 }}>MercadoLibre</h3>
+          <div style={{ fontSize: 12, color: "#78716c" }}>{meliUser ? "Hola, " + meliUser.first_name : "Buscá y compará productos"}</div>
+        </div>
+      </div>
+
+      {/* Sub-tabs */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 14, overflowX: "auto" }}>
+        {[
+          ["buscar", "\uD83D\uDD0D", "Buscar"],
+          ...(meliToken ? [["compras", "\uD83D\uDED2", "Compras"], ["favoritos", "\u2764\uFE0F", "Favoritos"]] : []),
+          ["cuenta", "\uD83D\uDC64", "Cuenta"],
+        ].map(([id, icon, label]) => (
+          <button key={id} style={{ ...S.chipBtn, whiteSpace: "nowrap", fontSize: 13, padding: "7px 14px", ...(subTab === id ? { background: "#3483fa", color: "#fff", borderColor: "#3483fa" } : {}) }} onClick={() => {
+            setSubTab(id);
+            if (id === "compras" && !purchases) fetchPurchases();
+            if (id === "favoritos" && !favorites) fetchFavorites();
+          }}>{icon} {label}</button>
+        ))}
+      </div>
+
+      {/* ── BUSCAR ── */}
+      {subTab === "buscar" && (
+        <div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            <div style={{ flex: 1, position: "relative" }}>
+              <input style={{ ...S.searchInput, paddingRight: 36, width: "100%" }} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && searchML(query)} placeholder='Ej: "auriculares bluetooth"' />
+              {query && <button style={S.clearBtn} onClick={() => { setQuery(""); setResults(null); }}>{"\u2715"}</button>}
+            </div>
+            <button style={{ ...S.searchBtn, background: "#3483fa" }} onClick={() => searchML(query)} disabled={loading}>{loading ? "..." : "\uD83D\uDD0D"}</button>
+          </div>
+
+          {!loading && !results && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center", marginBottom: 16 }}>
+              {["auriculares bluetooth","zapatillas running","smart tv 43","silla gamer","teclado mecánico","mochila"].map((s) => (
+                <button key={s} style={S.suggestionChip} onClick={() => { setQuery(s); searchML(s); }}>{s}</button>
+              ))}
+            </div>
+          )}
+
+          {loading && <div style={S.emptyState}><div style={{ ...S.spinner, borderTopColor: "#3483fa" }} /><div style={{ marginTop: 16 }}>Buscando en MercadoLibre...</div></div>}
+
+          {results && (
+            <div>
+              <div style={{ fontSize: 13, color: "#78716c", marginBottom: 10 }}>{results.total?.toLocaleString("es-AR")} resultado{results.total !== 1 ? "s" : ""}</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {(results.productos || []).map((p, i) => (
+                  <a key={i} href={p.link} target="_blank" rel="noopener noreferrer" style={{ ...S.optionCard, textDecoration: "none", color: "#171717" }}>
+                    {p.imagen ? <img src={p.imagen} alt="" style={S.optionImg} onError={(e) => (e.target.style.display = "none")} /> : <div style={S.optionImgPlaceholder}>{"\uD83D\uDCE6"}</div>}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ ...S.optionName, fontSize: 13 }}>{p.nombre}</div>
+                      <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+                        {p.envioGratis && <span style={{ fontSize: 10, background: "#00a650", color: "#fff", padding: "1px 6px", borderRadius: 6, fontWeight: 600 }}>Envío gratis</span>}
+                        {p.condicion && <span style={{ fontSize: 10, color: "#78716c" }}>{p.condicion}</span>}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right", flexShrink: 0 }}>
+                      <div style={{ fontFamily: "'Fredoka', sans-serif", fontWeight: 700, fontSize: 16, color: "#3483fa" }}>${fmt(p.precio)}</div>
+                    </div>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── COMPRAS ── */}
+      {subTab === "compras" && (
+        <div>
+          {loadingAccount && <div style={S.emptyState}><div style={{ ...S.spinner, borderTopColor: "#3483fa" }} /><div style={{ marginTop: 16 }}>Cargando compras...</div></div>}
+          {!loadingAccount && purchases && purchases.length === 0 && (
+            <div style={S.emptyState}><div style={{ fontSize: 48 }}>{"\uD83D\uDED2"}</div><div>No se encontraron compras recientes</div></div>
+          )}
+          {!loadingAccount && purchases && purchases.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {purchases.map((order, i) => (
+                <div key={i} style={{ ...S.card, padding: 14 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>{order.order_items?.[0]?.item?.title || "Compra"}</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}>
+                    <span style={{ fontSize: 12, color: "#78716c" }}>{new Date(order.date_created).toLocaleDateString("es-AR")}</span>
+                    <span style={{ fontFamily: "'Fredoka', sans-serif", fontWeight: 700, color: "#3483fa" }}>${fmt(order.total_amount || 0)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── FAVORITOS ── */}
+      {subTab === "favoritos" && (
+        <div>
+          {loadingAccount && <div style={S.emptyState}><div style={{ ...S.spinner, borderTopColor: "#3483fa" }} /><div style={{ marginTop: 16 }}>Cargando favoritos...</div></div>}
+          {!loadingAccount && favorites && favorites.length === 0 && (
+            <div style={S.emptyState}><div style={{ fontSize: 48 }}>{"\u2764\uFE0F"}</div><div>No tenés favoritos guardados</div></div>
+          )}
+          {!loadingAccount && favorites && favorites.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {favorites.map((fav, i) => (
+                <a key={i} href={"https://articulo.mercadolibre.com.ar/MLA-" + fav.item_id} target="_blank" rel="noopener noreferrer" style={{ ...S.optionCard, textDecoration: "none", color: "#171717" }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={S.optionName}>{fav.item?.title || "Producto " + fav.item_id}</div>
+                  </div>
+                  {fav.item?.price && <div style={{ fontFamily: "'Fredoka', sans-serif", fontWeight: 700, color: "#3483fa" }}>${fmt(fav.item.price)}</div>}
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── CUENTA ── */}
+      {subTab === "cuenta" && (
+        <div>
+          {loadingAccount && <div style={S.emptyState}><div style={{ ...S.spinner, borderTopColor: "#3483fa" }} /></div>}
+
+          {!meliToken && !loadingAccount && (
+            <div>
+              <div style={S.emptyState}>
+                <div style={{ fontSize: 56, marginBottom: 12 }}>{"\uD83D\uDFE1"}</div>
+                <div style={{ fontWeight: 600 }}>Vinculá tu cuenta de MercadoLibre</div>
+                <div style={{ fontSize: 13, color: "#a3a3a3", marginTop: 4, maxWidth: 280, margin: "4px auto 0", lineHeight: 1.5 }}>
+                  Accedé a tus compras, favoritos y más desde SuperMamu
+                </div>
+              </div>
+              <a href={loginUrl} style={{ ...S.btnPrimary, background: "#3483fa", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, textDecoration: "none", textAlign: "center", padding: "16px 24px", fontSize: 16 }}>
+                {"\uD83D\uDFE1"} Vincular MercadoLibre
+              </a>
+            </div>
+          )}
+
+          {meliToken && meliUser && !loadingAccount && (
+            <div>
+              <div style={{ ...S.card, padding: 20, textAlign: "center", marginBottom: 16 }}>
+                <div style={{ fontSize: 48, marginBottom: 8 }}>{"\uD83D\uDC64"}</div>
+                <div style={{ fontFamily: "'Fredoka', sans-serif", fontWeight: 700, fontSize: 18 }}>{meliUser.first_name} {meliUser.last_name}</div>
+                <div style={{ fontSize: 13, color: "#78716c", marginTop: 4 }}>{meliUser.nickname}</div>
+                <div style={{ fontSize: 12, color: "#a3a3a3", marginTop: 2 }}>{meliUser.email}</div>
+                {meliUser.points !== undefined && (
+                  <div style={{ marginTop: 12, display: "flex", justifyContent: "center", gap: 16, fontSize: 13 }}>
+                    <span>{"\uD83C\uDFC6"} Nivel {meliUser.buyer_reputation?.level_id || "—"}</span>
+                    <span>{"\u2B50"} {meliUser.points || 0} puntos</span>
+                  </div>
+                )}
+              </div>
+              <button style={{ ...S.btnSmall, width: "100%", color: "#dc2626", textAlign: "center", padding: 14 }} onClick={logout}>
+                Desvincular cuenta
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
    SERVICIOS CERCANOS
    ═══════════════════════════════════════════════════ */
 
@@ -2071,6 +2377,9 @@ export default function SuperMamu() {
 
         {/* FARMACIA CONTENT */}
         {category === "farmacia" && <FarmaciaView />}
+
+        {/* MERCADOLIBRE CONTENT */}
+        {category === "meli" && <MercadoLibreView />}
 
         {/* SERVICIOS CERCANOS CONTENT */}
         {category === "servicios" && <ServiciosCercanosView />}
