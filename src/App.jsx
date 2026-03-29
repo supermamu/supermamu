@@ -1617,6 +1617,9 @@ function MercadoLibreView() {
   const [meliUser, setMeliUser] = useState(null);
   const [purchases, setPurchases] = useState(null);
   const [shipments, setShipments] = useState(null);
+  const [balance, setBalance] = useState(null);
+  const [balanceAdvice, setBalanceAdvice] = useState(null);
+  const [loadingBalance, setLoadingBalance] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
 
   const logout = () => {
@@ -1764,6 +1767,56 @@ function MercadoLibreView() {
     setShipments(results);
   };
 
+  const fetchBalance = async () => {
+    setLoadingBalance(true); setBalance(null); setBalanceAdvice(null);
+    const token = await getValidToken();
+    if (!token) { setLoadingBalance(false); return; }
+    try {
+      const userId = meliToken.user_id || meliUser?.id;
+      // Try mercadopago account balance
+      let data = await meliApi("/users/" + userId + "/mercadopago_account/balance", token);
+      if (!data || data.error || data.message) {
+        // Fallback: try account info
+        data = await meliApi("/users/" + userId + "/mercadopago_account", token);
+      }
+      if (data && !data.error && !data.message) {
+        const bal = data.available_balance !== undefined ? data.available_balance : data.balance || data.total || 0;
+        setBalance({ available: bal, currency: data.currency_id || "ARS", total: data.total || bal });
+        fetchBalanceAdvice(bal);
+      } else {
+        setBalance({ error: "No se pudo obtener el saldo. Verificá que tu cuenta de MercadoPago esté vinculada." });
+      }
+    } catch { setBalance({ error: "Error al consultar el saldo" }); }
+    setLoadingBalance(false);
+  };
+
+  const fetchBalanceAdvice = async (amount) => {
+    try {
+      const prompt = "Saldo en MercadoPago: $" + Math.round(amount).toLocaleString("es-AR") + " ARS.\n\nDame 3 recomendaciones prácticas y breves en argentino (vos):\n1. 💰 Ahorro: qué hacer con esa plata para ahorrar\n2. 🛒 Gasto inteligente: en qué conviene gastarla\n3. 📈 Inversión: opciones de inversión accesibles\n\nConsiderá que es un usuario argentino, mencioná opciones reales (plazo fijo, FCI, dólar MEP, crypto, etc). Sé directo, 100 palabras max.\n\nJSON: {\"ahorro\":\"...\",\"gasto\":\"...\",\"inversion\":\"...\",\"resumen\":\"frase corta del consejo principal\"}";
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 25000);
+
+      const resp = await fetch(AI_PROXY, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "arcee-ai/trinity-large-preview:free", messages: [{ role: "system", content: "JSON válido únicamente. Asesor financiero argentino." }, { role: "user", content: prompt }], max_tokens: 300, temperature: 0.7 }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (resp.ok) {
+        const raw = await resp.text();
+        let data; try { data = JSON.parse(raw); } catch { return; }
+        let content = data.choices?.[0]?.message?.content || "";
+        content = content.replace(/```json\s*/gi, "").replace(/```\s*/gi, "").trim();
+        const js = content.indexOf("{"), je = content.lastIndexOf("}");
+        if (js !== -1 && je !== -1) {
+          try { setBalanceAdvice(JSON.parse(content.slice(js, je + 1))); } catch {}
+        }
+      }
+    } catch {}
+  };
+
   const statusLabel = (status) => {
     const map = { pending: "Pendiente", handling: "Preparando", ready_to_ship: "Listo para enviar", shipped: "En camino", delivered: "Entregado", not_delivered: "No entregado", cancelled: "Cancelado" };
     return map[status] || status;
@@ -1810,11 +1863,12 @@ function MercadoLibreView() {
         <div>
           {/* Sub-tabs */}
           <div style={{ display: "flex", gap: 6, marginBottom: 14, overflowX: "auto" }}>
-            {[["compras", "\uD83D\uDED2", "Compras"], ["envios", "\uD83D\uDCE6", "Envíos"], ["cuenta", "\uD83D\uDC64", "Cuenta"]].map(([id, icon, label]) => (
+            {[["compras", "\uD83D\uDED2", "Compras"], ["envios", "\uD83D\uDCE6", "Envíos"], ["billetera", "\uD83D\uDCB0", "Billetera"], ["cuenta", "\uD83D\uDC64", "Cuenta"]].map(([id, icon, label]) => (
               <button key={id} style={{ ...S.chipBtn, whiteSpace: "nowrap", fontSize: 13, padding: "7px 14px", flex: 1, ...(subTab === id ? { background: "#3483fa", color: "#fff", borderColor: "#3483fa" } : {}) }} onClick={() => {
                 setSubTab(id);
                 if (id === "compras" && !purchases) fetchPurchases();
                 if (id === "envios" && !shipments) fetchPurchases();
+                if (id === "billetera" && !balance) fetchBalance();
               }}>{icon} {label}</button>
             ))}
           </div>
@@ -1875,6 +1929,66 @@ function MercadoLibreView() {
                       )}
                     </div>
                   ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── BILLETERA ── */}
+          {subTab === "billetera" && (
+            <div>
+              {loadingBalance && <div style={S.emptyState}><div style={{ ...S.spinner, borderTopColor: "#3483fa" }} /><div style={{ marginTop: 16 }}>Consultando saldo...</div></div>}
+
+              {balance && balance.error && (
+                <div style={S.emptyState}>
+                  <div style={{ fontSize: 48 }}>{"\uD83D\uDCB0"}</div>
+                  <div style={{ fontSize: 13, color: "#78716c", marginTop: 8, lineHeight: 1.5 }}>{balance.error}</div>
+                  <button style={{ ...S.btnPrimary, background: "#3483fa", marginTop: 12 }} onClick={fetchBalance}>Reintentar</button>
+                </div>
+              )}
+
+              {balance && !balance.error && (
+                <div>
+                  {/* Balance card */}
+                  <div style={{ ...S.card, padding: 24, textAlign: "center", marginBottom: 16, background: "linear-gradient(135deg, #3483fa 0%, #2563eb 100%)", color: "#fff", borderRadius: 20 }}>
+                    <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 4 }}>Saldo disponible</div>
+                    <div style={{ fontFamily: "'Fredoka', sans-serif", fontWeight: 800, fontSize: 38 }}>${fmt(balance.available)}</div>
+                    <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>{balance.currency || "ARS"}</div>
+                  </div>
+
+                  {/* AI loading */}
+                  {!balanceAdvice && (
+                    <div style={{ ...S.card, padding: 16, textAlign: "center" }}>
+                      <div style={{ ...S.spinner, borderTopColor: "#3483fa", width: 24, height: 24, borderWidth: 2 }} />
+                      <div style={{ fontSize: 12, color: "#78716c", marginTop: 8 }}>La IA analiza tu saldo...</div>
+                    </div>
+                  )}
+
+                  {/* AI advice */}
+                  {balanceAdvice && (
+                    <div style={{ ...S.card, marginBottom: 12, overflow: "hidden" }}>
+                      <div style={{ padding: "10px 16px", background: "#eff6ff", borderBottom: "1px solid #bfdbfe", fontWeight: 700, fontSize: 13, color: "#1d4ed8" }}>{"\uD83E\uDD16"} Recomendaciones financieras</div>
+                      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+                        {balanceAdvice.resumen && (
+                          <div style={{ ...S.tipBox, margin: 0, background: "#f0fdf4", borderColor: "#bbf7d0", color: "#166534" }}>{"\uD83D\uDCA1"} {balanceAdvice.resumen}</div>
+                        )}
+                        <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                          <span style={{ fontSize: 20 }}>{"\uD83D\uDCB0"}</span>
+                          <div><div style={{ fontSize: 12, fontWeight: 700, color: "#78716c", marginBottom: 2 }}>Ahorro</div><div style={{ fontSize: 13, lineHeight: 1.5 }}>{balanceAdvice.ahorro}</div></div>
+                        </div>
+                        <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                          <span style={{ fontSize: 20 }}>{"\uD83D\uDED2"}</span>
+                          <div><div style={{ fontSize: 12, fontWeight: 700, color: "#78716c", marginBottom: 2 }}>Gasto inteligente</div><div style={{ fontSize: 13, lineHeight: 1.5 }}>{balanceAdvice.gasto}</div></div>
+                        </div>
+                        <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                          <span style={{ fontSize: 20 }}>{"\uD83D\uDCC8"}</span>
+                          <div><div style={{ fontSize: 12, fontWeight: 700, color: "#78716c", marginBottom: 2 }}>Inversión</div><div style={{ fontSize: 13, lineHeight: 1.5 }}>{balanceAdvice.inversion}</div></div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <button style={{ ...S.btnSmall, width: "100%", textAlign: "center", padding: 12, color: "#3483fa" }} onClick={fetchBalance}>{"\uD83D\uDD04"} Actualizar saldo</button>
                 </div>
               )}
             </div>
