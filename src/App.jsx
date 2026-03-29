@@ -1612,15 +1612,18 @@ function FarmaciaView() {
    ═══════════════════════════════════════════════════ */
 
 function MercadoLibreView() {
-  const [subTab, setSubTab] = useState("buscar");
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [subTab, setSubTab] = useState("compras");
   const [meliToken, setMeliToken] = useState(null);
   const [meliUser, setMeliUser] = useState(null);
   const [purchases, setPurchases] = useState(null);
-  const [favorites, setFavorites] = useState(null);
-  const [loadingAccount, setLoadingAccount] = useState(false);
+  const [shipments, setShipments] = useState(null);
+  const [loadingData, setLoadingData] = useState(false);
+
+  const logout = () => {
+    setMeliToken(null); setMeliUser(null); setPurchases(null); setShipments(null);
+    localStorage.removeItem("supermamu_meli");
+    setSubTab("cuenta");
+  };
 
   // Load saved token
   useEffect(() => {
@@ -1630,7 +1633,7 @@ function MercadoLibreView() {
         const parsed = JSON.parse(saved);
         if (parsed.access_token) {
           setMeliToken(parsed);
-          fetchMeliUser(parsed.access_token);
+          fetchMeliUser(parsed.access_token, parsed);
         }
       }
     } catch {}
@@ -1642,13 +1645,12 @@ function MercadoLibreView() {
     const code = params.get("code");
     if (code && !meliToken) {
       exchangeToken(code);
-      // Clean URL
       window.history.replaceState({}, "", window.location.pathname);
     }
   }, []);
 
   const exchangeToken = async (code) => {
-    setLoadingAccount(true);
+    setLoadingData(true);
     try {
       const resp = await fetch(PROXY + "?tienda=meli-token&code=" + encodeURIComponent(code));
       const data = await resp.json();
@@ -1656,25 +1658,25 @@ function MercadoLibreView() {
         const tokenData = { ...data, saved_at: Date.now() };
         setMeliToken(tokenData);
         localStorage.setItem("supermamu_meli", JSON.stringify(tokenData));
-        fetchMeliUser(data.access_token);
+        fetchMeliUser(data.access_token, tokenData);
       }
     } catch {}
-    setLoadingAccount(false);
+    setLoadingData(false);
   };
 
-  const refreshToken = async () => {
-    if (!meliToken?.refresh_token) return null;
+  const refreshTokenFlow = async (currentToken) => {
+    const rt = currentToken?.refresh_token || meliToken?.refresh_token;
+    if (!rt) { logout(); return null; }
     try {
-      const resp = await fetch(PROXY + "?tienda=meli-refresh&refresh_token=" + encodeURIComponent(meliToken.refresh_token));
+      const resp = await fetch(PROXY + "?tienda=meli-refresh&refresh_token=" + encodeURIComponent(rt));
       const data = await resp.json();
       if (data.access_token) {
         const tokenData = { ...data, saved_at: Date.now() };
         setMeliToken(tokenData);
         localStorage.setItem("supermamu_meli", JSON.stringify(tokenData));
-        return data.access_token;
+        return tokenData;
       }
     } catch {}
-    // Refresh failed → clear session
     logout();
     return null;
   };
@@ -1683,103 +1685,94 @@ function MercadoLibreView() {
     if (!meliToken) return null;
     const elapsed = (Date.now() - (meliToken.saved_at || 0)) / 1000;
     if (elapsed > (meliToken.expires_in || 21600) - 300) {
-      return await refreshToken();
+      const refreshed = await refreshTokenFlow(meliToken);
+      return refreshed?.access_token || null;
     }
     return meliToken.access_token;
   };
 
   const meliApi = async (path, token) => {
     let resp = await fetch(PROXY + "?tienda=meli-api&path=" + encodeURIComponent(path) + (token ? "&access_token=" + encodeURIComponent(token) : ""));
-    // If 401, try refreshing token once
-    if (resp.status === 401 || (resp.ok && (await resp.clone().json()).message === "unauthorized")) {
-      const newToken = await refreshToken();
-      if (newToken) {
-        resp = await fetch(PROXY + "?tienda=meli-api&path=" + encodeURIComponent(path) + "&access_token=" + encodeURIComponent(newToken));
-      } else { return null; }
+    const data = await resp.json();
+    // If unauthorized, try refreshing
+    if (resp.status === 401 || data?.status === 401 || data?.message === "unauthorized") {
+      const refreshed = await refreshTokenFlow(meliToken);
+      if (!refreshed) return null;
+      resp = await fetch(PROXY + "?tienda=meli-api&path=" + encodeURIComponent(path) + "&access_token=" + encodeURIComponent(refreshed.access_token));
+      if (!resp.ok) return null;
+      return await resp.json();
     }
     if (!resp.ok) return null;
-    return await resp.json();
+    return data;
   };
 
-  const fetchMeliUser = async (token) => {
+  const fetchMeliUser = async (token, tokenObj) => {
     try {
       const data = await meliApi("/users/me", token);
-      if (data && data.id) setMeliUser(data);
-    } catch {}
+      if (data && data.id) {
+        setMeliUser(data);
+        // Update user_id in token if missing
+        if (tokenObj && !tokenObj.user_id) {
+          const updated = { ...tokenObj, user_id: data.id };
+          setMeliToken(updated);
+          localStorage.setItem("supermamu_meli", JSON.stringify(updated));
+        }
+      } else {
+        // Token invalid
+        logout();
+      }
+    } catch { logout(); }
   };
 
   const fetchPurchases = async () => {
-    setLoadingAccount(true);
+    setLoadingData(true);
     const token = await getValidToken();
-    if (!token) { setLoadingAccount(false); return; }
+    if (!token) { setLoadingData(false); return; }
     try {
-      const data = await meliApi("/orders/search?buyer=" + meliToken.user_id + "&sort=date_desc&limit=10", token);
-      if (data) setPurchases(data.results || []);
-    } catch {}
-    setLoadingAccount(false);
-  };
-
-  const fetchFavorites = async () => {
-    setLoadingAccount(true);
-    const token = await getValidToken();
-    if (!token) { setLoadingAccount(false); return; }
-    try {
-      // Try bookmarks endpoint
-      let data = await meliApi("/users/" + meliToken.user_id + "/bookmarks?limit=20", token);
-      // If 404, try alternate endpoints
-      if (!data || data.error) {
-        data = await meliApi("/users/" + meliToken.user_id + "/items/bookmarks?limit=20", token);
-      }
-      if (data && !data.error) {
-        const items = Array.isArray(data) ? data : data.results || data.bookmarks || [];
-        setFavorites(items);
-      } else {
-        setFavorites([]);
-      }
-    } catch { setFavorites([]); }
-    setLoadingAccount(false);
-  };
-
-  const logout = () => {
-    setMeliToken(null); setMeliUser(null); setPurchases(null); setFavorites(null);
-    localStorage.removeItem("supermamu_meli");
-  };
-
-  const searchML = async (q) => {
-    const trimmed = (q || "").trim();
-    if (!trimmed) return;
-    setLoading(true); setResults(null);
-    try {
-      // Use user's token if available (avoids 403), fallback to worker proxy
-      const token = await getValidToken();
-      let data;
-      if (token) {
-        data = await meliApi("/sites/MLA/search?q=" + encodeURIComponent(trimmed) + "&limit=10&sort=relevance", token);
-      }
-      if (!data || data.error || data.message === "forbidden") {
-        // Fallback: try worker proxy with client_credentials
-        const resp = await fetch(PROXY + "?tienda=mercadolibre&q=" + encodeURIComponent(trimmed));
-        if (resp.ok) data = await resp.json();
-      }
+      const userId = meliToken.user_id || meliUser?.id;
+      const data = await meliApi("/orders/search?buyer=" + userId + "&sort=date_desc&limit=15", token);
       if (data && data.results) {
-        const productos = (data.results || []).slice(0, 10).map((item) => ({
-          id: item.id, nombre: item.title, precio: item.price, moneda: item.currency_id,
-          imagen: item.thumbnail ? item.thumbnail.replace("http:", "https:") : null,
-          link: item.permalink, envioGratis: item.shipping?.free_shipping || false,
-          condicion: item.condition === "new" ? "Nuevo" : item.condition === "used" ? "Usado" : item.condition,
-          vendedor: item.seller?.nickname || null,
-        }));
-        setResults({ source: "mercadolibre", total: data.paging?.total || 0, productos, query: trimmed });
-      } else if (data && data.productos && data.productos.length > 0) {
-        setResults({ ...data, query: trimmed });
-      } else {
-        // All failed - show web link fallback
-        setResults({ productos: [], total: 0, query: trimmed, openWeb: true });
+        setPurchases(data.results);
+        // Extract shipment IDs for tracking
+        const shipIds = data.results.filter((o) => o.shipping?.id).map((o) => ({ shipId: o.shipping.id, item: o.order_items?.[0]?.item?.title || "Producto", date: o.date_created }));
+        if (shipIds.length > 0) fetchShipments(shipIds, token);
       }
-    } catch {
-      setResults({ productos: [], total: 0, query: trimmed, openWeb: true });
+    } catch {}
+    setLoadingData(false);
+  };
+
+  const fetchShipments = async (shipIds, token) => {
+    const results = [];
+    for (const s of shipIds.slice(0, 10)) {
+      try {
+        const data = await meliApi("/shipments/" + s.shipId, token);
+        if (data && data.id) {
+          results.push({
+            id: data.id,
+            item: s.item,
+            status: data.status,
+            substatus: data.substatus || "",
+            trackingNumber: data.tracking_number || null,
+            trackingMethod: data.tracking_method || null,
+            dateCreated: s.date,
+            receiverCity: data.receiver_address?.city?.name || "",
+            estimatedDelivery: data.estimated_delivery_time?.date || null,
+          });
+        }
+      } catch {}
     }
-    setLoading(false);
+    setShipments(results);
+  };
+
+  const statusLabel = (status) => {
+    const map = { pending: "Pendiente", handling: "Preparando", ready_to_ship: "Listo para enviar", shipped: "En camino", delivered: "Entregado", not_delivered: "No entregado", cancelled: "Cancelado" };
+    return map[status] || status;
+  };
+  const statusColor = (status) => {
+    if (status === "delivered") return "#16a34a";
+    if (status === "shipped" || status === "ready_to_ship") return "#2563eb";
+    if (status === "cancelled" || status === "not_delivered") return "#dc2626";
+    return "#78716c";
   };
 
   const loginUrl = "https://auth.mercadolibre.com.ar/authorization?response_type=code&client_id=" + MELI_CLIENT_ID + "&redirect_uri=" + encodeURIComponent(MELI_REDIRECT_URI);
@@ -1790,178 +1783,121 @@ function MercadoLibreView() {
         <span style={{ fontSize: 28 }}>{"\uD83D\uDFE1"}</span>
         <div>
           <h3 style={{ fontSize: 18, fontWeight: 800, fontFamily: "'Fredoka', sans-serif", margin: 0 }}>MercadoLibre</h3>
-          <div style={{ fontSize: 12, color: "#78716c" }}>{meliUser ? "Hola, " + meliUser.first_name : "Buscá y compará productos"}</div>
+          <div style={{ fontSize: 12, color: "#78716c" }}>{meliUser ? "Hola, " + meliUser.first_name : "Vinculá tu cuenta"}</div>
         </div>
       </div>
 
-      {/* Sub-tabs */}
-      <div style={{ display: "flex", gap: 6, marginBottom: 14, overflowX: "auto" }}>
-        {[
-          ["buscar", "\uD83D\uDD0D", "Buscar"],
-          ...(meliToken ? [["compras", "\uD83D\uDED2", "Compras"], ["favoritos", "\u2764\uFE0F", "Favoritos"]] : []),
-          ["cuenta", "\uD83D\uDC64", "Cuenta"],
-        ].map(([id, icon, label]) => (
-          <button key={id} style={{ ...S.chipBtn, whiteSpace: "nowrap", fontSize: 13, padding: "7px 14px", ...(subTab === id ? { background: "#3483fa", color: "#fff", borderColor: "#3483fa" } : {}) }} onClick={() => {
-            setSubTab(id);
-            if (id === "compras" && !purchases) fetchPurchases();
-            if (id === "favoritos" && !favorites) fetchFavorites();
-          }}>{icon} {label}</button>
-        ))}
-      </div>
-
-      {/* ── BUSCAR ── */}
-      {subTab === "buscar" && (
+      {!meliToken && !loadingData && (
         <div>
-          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-            <div style={{ flex: 1, position: "relative" }}>
-              <input style={{ ...S.searchInput, paddingRight: 36, width: "100%" }} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && searchML(query)} placeholder='Ej: "auriculares bluetooth"' />
-              {query && <button style={S.clearBtn} onClick={() => { setQuery(""); setResults(null); }}>{"\u2715"}</button>}
+          <div style={S.emptyState}>
+            <div style={{ fontSize: 56, marginBottom: 12 }}>{"\uD83D\uDFE1"}</div>
+            <div style={{ fontWeight: 600 }}>Vinculá tu cuenta de MercadoLibre</div>
+            <div style={{ fontSize: 13, color: "#a3a3a3", marginTop: 4, maxWidth: 280, margin: "4px auto 0", lineHeight: 1.5 }}>
+              Accedé a tus compras recientes y seguí tus envíos desde SuperMamu
             </div>
-            <button style={{ ...S.searchBtn, background: "#3483fa" }} onClick={() => searchML(query)} disabled={loading}>{loading ? "..." : "\uD83D\uDD0D"}</button>
+          </div>
+          <a href={loginUrl} style={{ ...S.btnPrimary, background: "#3483fa", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, textDecoration: "none", textAlign: "center", padding: "16px 24px", fontSize: 16 }}>
+            {"\uD83D\uDFE1"} Vincular MercadoLibre
+          </a>
+        </div>
+      )}
+
+      {loadingData && !meliToken && (
+        <div style={S.emptyState}><div style={{ ...S.spinner, borderTopColor: "#3483fa" }} /><div style={{ marginTop: 16 }}>Conectando con MercadoLibre...</div></div>
+      )}
+
+      {meliToken && (
+        <div>
+          {/* Sub-tabs */}
+          <div style={{ display: "flex", gap: 6, marginBottom: 14, overflowX: "auto" }}>
+            {[["compras", "\uD83D\uDED2", "Compras"], ["envios", "\uD83D\uDCE6", "Envíos"], ["cuenta", "\uD83D\uDC64", "Cuenta"]].map(([id, icon, label]) => (
+              <button key={id} style={{ ...S.chipBtn, whiteSpace: "nowrap", fontSize: 13, padding: "7px 14px", flex: 1, ...(subTab === id ? { background: "#3483fa", color: "#fff", borderColor: "#3483fa" } : {}) }} onClick={() => {
+                setSubTab(id);
+                if (id === "compras" && !purchases) fetchPurchases();
+                if (id === "envios" && !shipments) fetchPurchases();
+              }}>{icon} {label}</button>
+            ))}
           </div>
 
-          {!loading && !results && (
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center", marginBottom: 16 }}>
-              {["auriculares bluetooth","zapatillas running","smart tv 43","silla gamer","teclado mecánico","mochila"].map((s) => (
-                <button key={s} style={S.suggestionChip} onClick={() => { setQuery(s); searchML(s); }}>{s}</button>
-              ))}
-            </div>
-          )}
-
-          {loading && <div style={S.emptyState}><div style={{ ...S.spinner, borderTopColor: "#3483fa" }} /><div style={{ marginTop: 16 }}>Buscando en MercadoLibre...</div></div>}
-
-          {results && (
+          {/* ── COMPRAS ── */}
+          {subTab === "compras" && (
             <div>
-              {results.error && (
-                <div style={{ ...S.tipBox, background: "#fff7ed", borderColor: "#fed7aa", color: "#c2410c", marginBottom: 12 }}>
-                  {!meliToken ? (
-                    <span>{"\uD83D\uDD11"} <a href={loginUrl} style={{ color: "#3483fa", fontWeight: 700 }}>Vinculá tu cuenta de MercadoLibre</a> para buscar productos desde SuperMamu.</span>
-                  ) : (
-                    <span>{"\u26A0\uFE0F"} {results.error}. <a href={"https://listado.mercadolibre.com.ar/" + encodeURIComponent(results.query || "").replace(/%20/g, "-")} target="_blank" rel="noopener noreferrer" style={{ color: "#3483fa", fontWeight: 700 }}>Ver en MercadoLibre</a></span>
-                  )}
-                </div>
-              )}
-              {results.productos?.length > 0 && (
-                <div>
-                  <div style={{ fontSize: 13, color: "#78716c", marginBottom: 10 }}>{results.total?.toLocaleString("es-AR")} resultado{results.total !== 1 ? "s" : ""}</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {(results.productos || []).map((p, i) => (
-                  <a key={i} href={p.link} target="_blank" rel="noopener noreferrer" style={{ ...S.optionCard, textDecoration: "none", color: "#171717" }}>
-                    {p.imagen ? <img src={p.imagen} alt="" style={S.optionImg} onError={(e) => (e.target.style.display = "none")} /> : <div style={S.optionImgPlaceholder}>{"\uD83D\uDCE6"}</div>}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ ...S.optionName, fontSize: 13 }}>{p.nombre}</div>
-                      <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
-                        {p.envioGratis && <span style={{ fontSize: 10, background: "#00a650", color: "#fff", padding: "1px 6px", borderRadius: 6, fontWeight: 600 }}>Envío gratis</span>}
-                        {p.condicion && <span style={{ fontSize: 10, color: "#78716c" }}>{p.condicion}</span>}
-                      </div>
-                    </div>
-                    <div style={{ textAlign: "right", flexShrink: 0 }}>
-                      <div style={{ fontFamily: "'Fredoka', sans-serif", fontWeight: 700, fontSize: 16, color: "#3483fa" }}>${fmt(p.precio)}</div>
-                    </div>
-                  </a>
-                ))}
-              </div>
-                </div>
-              )}
-              {results.productos?.length === 0 && !results.error && (
-                <div style={{ textAlign: "center" }}>
-                  {results.openWeb ? (
-                    <div>
-                      <div style={S.emptyState}><div style={{ fontSize: 48 }}>{"\uD83D\uDFE1"}</div><div style={{ fontWeight: 600 }}>No pudimos cargar resultados</div><div style={{ fontSize: 13, color: "#a3a3a3", marginTop: 4 }}>Pero podés ver los resultados directo en MercadoLibre</div></div>
-                      <a href={"https://listado.mercadolibre.com.ar/" + encodeURIComponent(results.query || "").replace(/%20/g, "-")} target="_blank" rel="noopener noreferrer" style={{ ...S.btnPrimary, background: "#3483fa", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, textDecoration: "none", padding: "14px 24px", fontSize: 15 }}>
-                        {"\uD83D\uDFE1"} Ver en MercadoLibre
+              {!purchases && !loadingData && <div style={{ textAlign: "center" }}><button style={{ ...S.btnPrimary, background: "#3483fa" }} onClick={fetchPurchases}>Cargar compras</button></div>}
+              {loadingData && <div style={S.emptyState}><div style={{ ...S.spinner, borderTopColor: "#3483fa" }} /><div style={{ marginTop: 16 }}>Cargando compras...</div></div>}
+              {purchases && purchases.length === 0 && <div style={S.emptyState}><div style={{ fontSize: 48 }}>{"\uD83D\uDED2"}</div><div>No se encontraron compras recientes</div></div>}
+              {purchases && purchases.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {purchases.map((order, i) => {
+                    const item = order.order_items?.[0]?.item;
+                    return (
+                      <a key={i} href={item?.permalink || "#"} target="_blank" rel="noopener noreferrer" style={{ ...S.card, padding: 14, textDecoration: "none", color: "#171717", display: "block" }}>
+                        <div style={{ fontSize: 14, fontWeight: 600 }}>{item?.title || "Compra"}</div>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}>
+                          <span style={{ fontSize: 12, color: "#78716c" }}>{new Date(order.date_created).toLocaleDateString("es-AR")}</span>
+                          <span style={{ fontFamily: "'Fredoka', sans-serif", fontWeight: 700, color: "#3483fa" }}>${fmt(order.total_amount || 0)}</span>
+                        </div>
+                        {order.shipping?.id && (
+                          <div style={{ fontSize: 11, color: statusColor(order.shipping?.status || ""), marginTop: 4 }}>
+                            {"\uD83D\uDCE6"} {statusLabel(order.shipping?.status || "pending")}
+                          </div>
+                        )}
                       </a>
-                    </div>
-                  ) : (
-                    <div style={S.emptyState}><div style={{ fontSize: 48 }}>{"\uD83D\uDD0D"}</div><div>No se encontraron productos</div></div>
-                  )}
+                    );
+                  })}
                 </div>
               )}
             </div>
           )}
-        </div>
-      )}
 
-      {/* ── COMPRAS ── */}
-      {subTab === "compras" && (
-        <div>
-          {loadingAccount && <div style={S.emptyState}><div style={{ ...S.spinner, borderTopColor: "#3483fa" }} /><div style={{ marginTop: 16 }}>Cargando compras...</div></div>}
-          {!loadingAccount && purchases && purchases.length === 0 && (
-            <div style={S.emptyState}><div style={{ fontSize: 48 }}>{"\uD83D\uDED2"}</div><div>No se encontraron compras recientes</div></div>
-          )}
-          {!loadingAccount && purchases && purchases.length > 0 && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {purchases.map((order, i) => (
-                <div key={i} style={{ ...S.card, padding: 14 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600 }}>{order.order_items?.[0]?.item?.title || "Compra"}</div>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}>
-                    <span style={{ fontSize: 12, color: "#78716c" }}>{new Date(order.date_created).toLocaleDateString("es-AR")}</span>
-                    <span style={{ fontFamily: "'Fredoka', sans-serif", fontWeight: 700, color: "#3483fa" }}>${fmt(order.total_amount || 0)}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── FAVORITOS ── */}
-      {subTab === "favoritos" && (
-        <div>
-          {loadingAccount && <div style={S.emptyState}><div style={{ ...S.spinner, borderTopColor: "#3483fa" }} /><div style={{ marginTop: 16 }}>Cargando favoritos...</div></div>}
-          {!loadingAccount && favorites && favorites.length === 0 && (
-            <div style={S.emptyState}><div style={{ fontSize: 48 }}>{"\u2764\uFE0F"}</div><div>No tenés favoritos guardados</div></div>
-          )}
-          {!loadingAccount && favorites && favorites.length > 0 && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {favorites.map((fav, i) => (
-                <a key={i} href={"https://articulo.mercadolibre.com.ar/MLA-" + fav.item_id} target="_blank" rel="noopener noreferrer" style={{ ...S.optionCard, textDecoration: "none", color: "#171717" }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={S.optionName}>{fav.item?.title || "Producto " + fav.item_id}</div>
-                  </div>
-                  {fav.item?.price && <div style={{ fontFamily: "'Fredoka', sans-serif", fontWeight: 700, color: "#3483fa" }}>${fmt(fav.item.price)}</div>}
-                </a>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── CUENTA ── */}
-      {subTab === "cuenta" && (
-        <div>
-          {loadingAccount && <div style={S.emptyState}><div style={{ ...S.spinner, borderTopColor: "#3483fa" }} /></div>}
-
-          {!meliToken && !loadingAccount && (
+          {/* ── ENVÍOS ── */}
+          {subTab === "envios" && (
             <div>
-              <div style={S.emptyState}>
-                <div style={{ fontSize: 56, marginBottom: 12 }}>{"\uD83D\uDFE1"}</div>
-                <div style={{ fontWeight: 600 }}>Vinculá tu cuenta de MercadoLibre</div>
-                <div style={{ fontSize: 13, color: "#a3a3a3", marginTop: 4, maxWidth: 280, margin: "4px auto 0", lineHeight: 1.5 }}>
-                  Accedé a tus compras, favoritos y más desde SuperMamu
+              {!shipments && !loadingData && <div style={{ textAlign: "center" }}><button style={{ ...S.btnPrimary, background: "#3483fa" }} onClick={fetchPurchases}>Cargar envíos</button></div>}
+              {loadingData && <div style={S.emptyState}><div style={{ ...S.spinner, borderTopColor: "#3483fa" }} /><div style={{ marginTop: 16 }}>Cargando envíos...</div></div>}
+              {shipments && shipments.length === 0 && <div style={S.emptyState}><div style={{ fontSize: 48 }}>{"\uD83D\uDCE6"}</div><div>No hay envíos recientes</div></div>}
+              {shipments && shipments.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {shipments.map((s, i) => (
+                    <div key={i} style={{ ...S.card, padding: 14, borderLeft: "4px solid " + statusColor(s.status) }}>
+                      <div style={{ fontSize: 14, fontWeight: 600 }}>{s.item}</div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: statusColor(s.status) }}>
+                          {statusLabel(s.status)}
+                        </span>
+                        <span style={{ fontSize: 12, color: "#78716c" }}>{new Date(s.dateCreated).toLocaleDateString("es-AR")}</span>
+                      </div>
+                      {s.receiverCity && <div style={{ fontSize: 12, color: "#78716c", marginTop: 4 }}>{"\uD83D\uDCCD"} {s.receiverCity}</div>}
+                      {s.estimatedDelivery && <div style={{ fontSize: 12, color: "#2563eb", marginTop: 2 }}>{"\uD83D\uDCC5"} Estimado: {new Date(s.estimatedDelivery).toLocaleDateString("es-AR")}</div>}
+                      {s.trackingNumber && (
+                        <div style={{ fontSize: 11, color: "#a3a3a3", marginTop: 4 }}>
+                          Tracking: {s.trackingNumber} {s.trackingMethod ? "(" + s.trackingMethod + ")" : ""}
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              </div>
-              <a href={loginUrl} style={{ ...S.btnPrimary, background: "#3483fa", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, textDecoration: "none", textAlign: "center", padding: "16px 24px", fontSize: 16 }}>
-                {"\uD83D\uDFE1"} Vincular MercadoLibre
-              </a>
+              )}
             </div>
           )}
 
-          {meliToken && meliUser && !loadingAccount && (
+          {/* ── CUENTA ── */}
+          {subTab === "cuenta" && (
             <div>
-              <div style={{ ...S.card, padding: 20, textAlign: "center", marginBottom: 16 }}>
-                <div style={{ fontSize: 48, marginBottom: 8 }}>{"\uD83D\uDC64"}</div>
-                <div style={{ fontFamily: "'Fredoka', sans-serif", fontWeight: 700, fontSize: 18 }}>{meliUser.first_name} {meliUser.last_name}</div>
-                <div style={{ fontSize: 13, color: "#78716c", marginTop: 4 }}>{meliUser.nickname}</div>
-                <div style={{ fontSize: 12, color: "#a3a3a3", marginTop: 2 }}>{meliUser.email}</div>
-                {meliUser.points !== undefined && (
-                  <div style={{ marginTop: 12, display: "flex", justifyContent: "center", gap: 16, fontSize: 13 }}>
-                    <span>{"\uD83C\uDFC6"} Nivel {meliUser.buyer_reputation?.level_id || "—"}</span>
-                    <span>{"\u2B50"} {meliUser.points || 0} puntos</span>
-                  </div>
-                )}
-              </div>
-              <button style={{ ...S.btnSmall, width: "100%", color: "#dc2626", textAlign: "center", padding: 14 }} onClick={logout}>
+              {meliUser && (
+                <div style={{ ...S.card, padding: 20, textAlign: "center", marginBottom: 16 }}>
+                  <div style={{ fontSize: 48, marginBottom: 8 }}>{"\uD83D\uDC64"}</div>
+                  <div style={{ fontFamily: "'Fredoka', sans-serif", fontWeight: 700, fontSize: 18 }}>{meliUser.first_name} {meliUser.last_name}</div>
+                  <div style={{ fontSize: 13, color: "#78716c", marginTop: 4 }}>{meliUser.nickname}</div>
+                  {meliUser.email && <div style={{ fontSize: 12, color: "#a3a3a3", marginTop: 2 }}>{meliUser.email}</div>}
+                </div>
+              )}
+              {!meliUser && (
+                <div style={{ ...S.card, padding: 20, textAlign: "center", marginBottom: 16 }}>
+                  <div style={{ fontSize: 48, marginBottom: 8 }}>{"\uD83D\uDFE1"}</div>
+                  <div style={{ fontSize: 13, color: "#78716c" }}>Sesión activa</div>
+                </div>
+              )}
+              <button style={{ width: "100%", padding: 14, borderRadius: 12, border: "1.5px solid #fecaca", background: "#fff1f2", color: "#dc2626", cursor: "pointer", fontFamily: "'DM Sans', sans-serif", fontWeight: 600, fontSize: 14 }} onClick={logout}>
                 Desvincular cuenta
               </button>
             </div>
