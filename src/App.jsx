@@ -1737,10 +1737,21 @@ function MercadoLibreView() {
     if (!trimmed) return;
     setLoading(true); setResults(null);
     try {
-      const resp = await fetch(PROXY + "?tienda=mercadolibre&q=" + encodeURIComponent(trimmed));
+      const resp = await fetch("https://api.mercadolibre.com/sites/MLA/search?q=" + encodeURIComponent(trimmed) + "&limit=10&sort=relevance");
       if (resp.ok) {
         const data = await resp.json();
-        setResults(data);
+        const productos = (data.results || []).slice(0, 10).map((item) => ({
+          id: item.id,
+          nombre: item.title,
+          precio: item.price,
+          moneda: item.currency_id,
+          imagen: item.thumbnail ? item.thumbnail.replace("http:", "https:") : null,
+          link: item.permalink,
+          envioGratis: item.shipping?.free_shipping || false,
+          condicion: item.condition === "new" ? "Nuevo" : item.condition === "used" ? "Usado" : item.condition,
+          vendedor: item.seller?.nickname || null,
+        }));
+        setResults({ source: "mercadolibre", total: data.paging?.total || 0, productos });
       }
     } catch {}
     setLoading(false);
@@ -1993,17 +2004,21 @@ function ClimaView({ userProfile }) {
   const fetchRecomendacion = async (climaData) => {
     setLoadingRec(true);
     try {
-      const hijosText = userProfile?.hijos?.length ? "Tiene " + userProfile.hijos.length + " hijo/s de " + userProfile.hijos.map((h) => h.edad + " años").join(", ") + "." : "";
-      const mascotasText = userProfile?.mascotas?.length ? "Tiene mascotas: " + userProfile.mascotas.map((m) => m.tipo).join(", ") + "." : "";
-      const nombre = userProfile?.nombre ? "El usuario se llama " + userProfile.nombre + "." : "";
+      const hijos = userProfile?.hijos?.length ? "Hijos: " + userProfile.hijos.map((h) => h.edad + " años").join(", ") + ". " : "";
+      const mascotas = userProfile?.mascotas?.length ? "Mascotas: " + userProfile.mascotas.map((m) => m.tipo).join(", ") + ". " : "";
 
-      const prompt = nombre + " " + hijosText + " " + mascotasText + "\n\nClima actual en " + (climaData.city || "su zona") + ":\n- Temperatura: " + Math.round(climaData.current.temp) + "°C\n- Sensación térmica: " + Math.round(climaData.current.feels_like) + "°C\n- Humedad: " + climaData.current.humidity + "%\n- Viento: " + Math.round(climaData.current.wind) + " km/h\n- Condición: " + climaData.current.description + "\n" + (climaData.rain_alert ? "- ALERTA: Se esperan lluvias\n" : "") + "\nDame una recomendación breve y práctica de:\n1. Cómo vestirse el/la usuario/a\n2. Cómo vestir a sus hijos (si tiene, según la edad)\n3. Cuidados con las mascotas (si tiene)\n4. Un consejo general del día\n\nSé conciso, usá emojis, y hablá en argentino (vos). Máximo 150 palabras.\n\nRespondé ÚNICAMENTE con JSON:\n{\"vestimenta\":\"recomendación para el adulto\",\"hijos\":\"recomendación para los chicos (o null si no tiene)\",\"mascotas\":\"recomendación para mascotas (o null si no tiene)\",\"consejo\":\"consejo general del día\"}";
+      const prompt = hijos + mascotas + "Clima en " + (climaData.city || "CABA") + ": " + Math.round(climaData.current.temp) + "°C (ST " + Math.round(climaData.current.feels_like) + "°C), " + climaData.current.description + ", humedad " + climaData.current.humidity + "%, viento " + Math.round(climaData.current.wind) + " km/h." + (climaData.rain_alert ? " Lluvia esperada." : "") + " Recomendá vestimenta para adulto" + (hijos ? ", para los chicos según edad" : "") + (mascotas ? ", cuidado de mascotas" : "") + " y un tip del día. Argentino, con emojis, 80 palabras max. JSON: {\"vestimenta\":\"...\",\"hijos\":\"...o null\",\"mascotas\":\"...o null\",\"consejo\":\"...\"}";
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 20000);
 
       const resp = await fetch(AI_PROXY, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "arcee-ai/trinity-large-preview:free", messages: [{ role: "system", content: "Respondés ÚNICAMENTE con JSON válido. Sos un asistente argentino simpático." }, { role: "user", content: prompt }], max_tokens: 512, temperature: 0.7 }),
+        body: JSON.stringify({ model: "arcee-ai/trinity-large-preview:free", messages: [{ role: "system", content: "JSON válido únicamente. Asistente argentino." }, { role: "user", content: prompt }], max_tokens: 256, temperature: 0.7 }),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
       if (resp.ok) {
         const raw = await resp.text();
         let data; try { data = JSON.parse(raw); } catch { return; }
