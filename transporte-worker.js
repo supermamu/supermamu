@@ -57,6 +57,13 @@ export default {
         case 'tarifas':
           return await handleTarifas();
 
+        case 'clima': {
+          const lat = url.searchParams.get('lat');
+          const lon = url.searchParams.get('lon');
+          if (!lat || !lon) return jsonResponse({ error: 'Faltan lat/lon' }, 400);
+          return await handleClima(lat, lon, env.OPENWEATHER_API_KEY);
+        }
+
         default:
           return jsonResponse({ error: 'Tipo no válido' }, 400);
       }
@@ -231,6 +238,80 @@ async function handleTarifas() {
       },
     },
   });
+}
+
+/**
+ * Fetch weather from OpenWeatherMap
+ */
+async function handleClima(lat, lon, apiKey) {
+  if (!apiKey) {
+    return jsonResponse({ error: 'NO_API_KEY' });
+  }
+
+  try {
+    // Current weather + 5-day forecast
+    const [currentResp, forecastResp] = await Promise.all([
+      fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&units=metric&lang=es&appid=${apiKey}`),
+      fetch(`https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&units=metric&lang=es&appid=${apiKey}`),
+    ]);
+
+    const currentData = currentResp.ok ? await currentResp.json() : null;
+    const forecastData = forecastResp.ok ? await forecastResp.json() : null;
+
+    const days = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+
+    // Parse forecast: group by day, get min/max
+    const dailyForecast = [];
+    if (forecastData?.list) {
+      const byDay = {};
+      for (const item of forecastData.list) {
+        const date = item.dt_txt.split(' ')[0];
+        if (!byDay[date]) byDay[date] = { temps: [], icons: [], descs: [] };
+        byDay[date].temps.push(item.main.temp);
+        byDay[date].icons.push(item.weather[0]?.icon);
+        byDay[date].descs.push(item.weather[0]?.description);
+      }
+      let count = 0;
+      for (const [date, info] of Object.entries(byDay)) {
+        if (count >= 5) break;
+        const d = new Date(date + 'T12:00:00');
+        dailyForecast.push({
+          day: days[d.getDay()],
+          min: Math.min(...info.temps),
+          max: Math.max(...info.temps),
+          icon: info.icons[Math.floor(info.icons.length / 2)],
+          description: info.descs[Math.floor(info.descs.length / 2)],
+        });
+        count++;
+      }
+    }
+
+    // Rain alert
+    let rainAlert = null;
+    if (forecastData?.list) {
+      const next12h = forecastData.list.slice(0, 4);
+      const rainy = next12h.filter(i => i.weather[0]?.main === 'Rain' || i.weather[0]?.main === 'Thunderstorm');
+      if (rainy.length > 0) {
+        rainAlert = 'Se esperan lluvias en las próximas horas. ¡Llevá paraguas!';
+      }
+    }
+
+    return jsonResponse({
+      city: currentData?.name || null,
+      current: currentData ? {
+        temp: currentData.main.temp,
+        feels_like: currentData.main.feels_like,
+        humidity: currentData.main.humidity,
+        wind: (currentData.wind?.speed || 0) * 3.6,
+        description: currentData.weather?.[0]?.description,
+        icon: currentData.weather?.[0]?.icon,
+      } : null,
+      forecast: dailyForecast,
+      rain_alert: rainAlert,
+    });
+  } catch (err) {
+    return jsonResponse({ error: err.message }, 500);
+  }
 }
 
 function jsonResponse(data, status = 200) {

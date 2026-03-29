@@ -38,6 +38,10 @@ export default {
         return await handleMedicamentos(query);
       }
 
+      if (tienda === 'mercadolibre') {
+        return await handleMercadoLibre(query);
+      }
+
       // ── VTEX stores ──
       let targetUrl;
       if (tienda === 'carrefour') {
@@ -411,6 +415,50 @@ function parseMedicamentosHtml(html) {
   }
 
   return unique.slice(0, 30);
+}
+
+// ═══════════════════════════════════════════════════════
+// MERCADOLIBRE — Public Search API
+// ═══════════════════════════════════════════════════════
+
+async function handleMercadoLibre(query) {
+  try {
+    const searchUrl = `https://api.mercadolibre.com/sites/MLA/search?q=${encodeURIComponent(query)}&limit=10&sort=relevance`;
+
+    const resp = await fetch(searchUrl, {
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'SuperMamu/1.0',
+      },
+    });
+
+    if (!resp.ok) {
+      return jsonResponse({ source: 'mercadolibre', error: 'Error ' + resp.status, productos: [] });
+    }
+
+    const data = await resp.json();
+    const productos = (data.results || []).slice(0, 10).map(item => ({
+      id: item.id,
+      nombre: item.title,
+      precio: item.price,
+      moneda: item.currency_id,
+      imagen: item.thumbnail ? item.thumbnail.replace('http:', 'https:') : null,
+      link: item.permalink,
+      envioGratis: item.shipping?.free_shipping || false,
+      condicion: item.condition === 'new' ? 'Nuevo' : item.condition === 'used' ? 'Usado' : item.condition,
+      vendedor: item.seller?.nickname || null,
+      cantidadVendidos: item.sold_quantity || 0,
+    }));
+
+    return jsonResponse({
+      source: 'mercadolibre',
+      query,
+      total: data.paging?.total || 0,
+      productos,
+    });
+  } catch (err) {
+    return jsonResponse({ source: 'mercadolibre', error: err.message, productos: [] });
+  }
 }
 
 // ═══════════════════════════════════════════════════════

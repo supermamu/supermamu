@@ -23,6 +23,8 @@ const CATEGORIES = [
   { id: "transporte", label: "Transporte", icon: "\uD83D\uDE8C", color: "#2563eb" },
   { id: "dolar", label: "Dólar", icon: "\uD83D\uDCB5", color: "#16a34a" },
   { id: "farmacia", label: "Farmacia", icon: "\uD83D\uDC8A", color: "#9333ea" },
+  { id: "servicios", label: "Servicios", icon: "\uD83D\uDCCD", color: "#0891b2" },
+  { id: "clima", label: "Clima", icon: "\u2600\uFE0F", color: "#f59e0b" },
 ];
 
 /* ═══════ VTEX PRODUCT PARSER ═══════ */
@@ -213,6 +215,9 @@ function PriceCard({ result, productName, productImage, onAddToCart, onAddToList
           );
         })}
       </div>
+      <a href={"https://listado.mercadolibre.com.ar/" + encodeURIComponent(nombre).replace(/%20/g, "-") + "#D[A:" + encodeURIComponent(nombre) + "]"} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px 18px", borderTop: "1px solid #f5f5f4", color: "#3483fa", textDecoration: "none", fontSize: 14, fontWeight: 600 }}>
+        <span style={{ fontSize: 16 }}>{"\uD83D\uDFE1"}</span> Ver en MercadoLibre {"\u203A"}
+      </a>
     </div>
   );
 }
@@ -1597,6 +1602,185 @@ function FarmaciaView() {
   );
 }
 
+/* ═══════════════════════════════════════════════════
+   SERVICIOS CERCANOS
+   ═══════════════════════════════════════════════════ */
+
+const SERVICIOS_LISTA = [
+  { icon: "\uD83D\uDD27", label: "Ferreterías", query: "ferretería" },
+  { icon: "\uD83D\uDC3E", label: "Veterinarias", query: "veterinaria" },
+  { icon: "\uD83D\uDD10", label: "Cerrajerías", query: "cerrajería" },
+  { icon: "\uD83D\uDEBF", label: "Plomerías", query: "plomero" },
+  { icon: "\u26A1", label: "Electricistas", query: "electricista" },
+  { icon: "\uD83E\uDDF9", label: "Limpieza", query: "servicio de limpieza" },
+  { icon: "\uD83D\uDE97", label: "Mecánicos", query: "mecánico automotor" },
+  { icon: "\uD83D\uDC55", label: "Tintorerías", query: "tintorería lavandería" },
+  { icon: "\uD83C\uDFE5", label: "Hospitales", query: "hospital" },
+  { icon: "\uD83D\uDC8A", label: "Farmacias", query: "farmacia" },
+  { icon: "\uD83C\uDFEB", label: "Escuelas", query: "escuela colegio" },
+  { icon: "\uD83C\uDFAA", label: "Gimnasios", query: "gimnasio" },
+  { icon: "\uD83D\uDCEE", label: "Correo", query: "correo argentino OCA" },
+  { icon: "\uD83C\uDFE6", label: "Bancos/Cajeros", query: "cajero automático banco" },
+  { icon: "\u26FD", label: "Estaciones de servicio", query: "estación de servicio" },
+  { icon: "\uD83D\uDED2", label: "Supermercados", query: "supermercado" },
+];
+
+function ServiciosCercanosView() {
+  const openMaps = (query) => {
+    window.open("https://www.google.com/maps/search/" + encodeURIComponent(query + " cerca de mi ubicación"), "_blank");
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+        <span style={{ fontSize: 28 }}>{"\uD83D\uDCCD"}</span>
+        <div>
+          <h3 style={{ fontSize: 18, fontWeight: 800, fontFamily: "'Fredoka', sans-serif", margin: 0 }}>Servicios Cercanos</h3>
+          <div style={{ fontSize: 12, color: "#78716c" }}>Encontrá lo que necesitás cerca tuyo</div>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        {SERVICIOS_LISTA.map((s) => (
+          <button key={s.label} onClick={() => openMaps(s.query)} style={{
+            display: "flex", alignItems: "center", gap: 10, padding: "14px 16px",
+            background: "#fff", border: "1px solid #e7e5e4", borderRadius: 14,
+            cursor: "pointer", fontFamily: "'DM Sans', sans-serif", fontSize: 13,
+            fontWeight: 500, color: "#171717", textAlign: "left",
+          }}>
+            <span style={{ fontSize: 22 }}>{s.icon}</span>
+            <span>{s.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   CLIMA
+   ═══════════════════════════════════════════════════ */
+
+function ClimaView() {
+  const [clima, setClima] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [ubicacion, setUbicacion] = useState(null);
+
+  const fetchClima = async (lat, lon) => {
+    setLoading(true); setError(null);
+    try {
+      const resp = await fetch(TRANSPORTE_PROXY + "?tipo=clima&lat=" + lat + "&lon=" + lon);
+      if (!resp.ok) throw new Error("Error " + resp.status);
+      const data = await resp.json();
+      setClima(data);
+    } catch (e) {
+      setError(e.message);
+    }
+    setLoading(false);
+  };
+
+  const getLocation = () => {
+    if (!navigator.geolocation) { setError("Tu navegador no soporta geolocalización"); return; }
+    setLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => { setUbicacion({ lat: pos.coords.latitude, lon: pos.coords.longitude }); fetchClima(pos.coords.latitude, pos.coords.longitude); },
+      () => { setError("No se pudo obtener tu ubicación. Permití el acceso en tu navegador."); setLoading(false); },
+      { timeout: 10000 }
+    );
+  };
+
+  const weatherIcon = (code) => {
+    if (!code) return "\u2601\uFE0F";
+    const c = String(code);
+    if (c.startsWith("01")) return "\u2600\uFE0F";
+    if (c.startsWith("02")) return "\u26C5";
+    if (c.startsWith("03") || c.startsWith("04")) return "\u2601\uFE0F";
+    if (c.startsWith("09") || c.startsWith("10")) return "\uD83C\uDF27\uFE0F";
+    if (c.startsWith("11")) return "\u26C8\uFE0F";
+    if (c.startsWith("13")) return "\u2744\uFE0F";
+    if (c.startsWith("50")) return "\uD83C\uDF2B\uFE0F";
+    return "\u2601\uFE0F";
+  };
+
+  if (!ubicacion && !loading && !error) {
+    return (
+      <div>
+        <div style={S.emptyState}>
+          <div style={{ fontSize: 56, marginBottom: 12 }}>{"\u2600\uFE0F"}</div>
+          <div style={{ fontWeight: 600 }}>Pronóstico del tiempo</div>
+          <div style={{ fontSize: 13, color: "#a3a3a3", marginTop: 4, maxWidth: 260, margin: "4px auto 0", lineHeight: 1.5 }}>
+            Permití el acceso a tu ubicación para ver el clima
+          </div>
+        </div>
+        <button style={{ ...S.btnPrimary, width: "100%", background: "#f59e0b" }} onClick={getLocation}>{"\uD83D\uDCCD"} Obtener mi ubicación</button>
+      </div>
+    );
+  }
+
+  if (loading) return <div style={S.emptyState}><div style={{ ...S.spinner, borderTopColor: "#f59e0b" }} /><div style={{ marginTop: 16 }}>Consultando el clima...</div></div>;
+  if (error) return <div style={S.emptyState}><div style={{ fontSize: 48 }}>{"\u2601\uFE0F"}</div><div style={S.errorBox}>{error}</div><button style={{ ...S.btnPrimary, background: "#f59e0b", marginTop: 8 }} onClick={getLocation}>Reintentar</button></div>;
+
+  if (clima?.error === "NO_API_KEY") {
+    return (
+      <div style={S.emptyState}>
+        <div style={{ fontSize: 56, marginBottom: 12 }}>{"\u2600\uFE0F"}</div>
+        <div style={{ fontWeight: 600 }}>Clima - Próximamente</div>
+        <div style={{ fontSize: 13, color: "#a3a3a3", marginTop: 8, lineHeight: 1.5 }}>
+          Esta función estará disponible pronto. Se necesita configurar la API key de OpenWeatherMap.
+        </div>
+      </div>
+    );
+  }
+
+  if (!clima?.current) return null;
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+        <span style={{ fontSize: 28 }}>{"\u2600\uFE0F"}</span>
+        <div>
+          <h3 style={{ fontSize: 18, fontWeight: 800, fontFamily: "'Fredoka', sans-serif", margin: 0 }}>Clima</h3>
+          <div style={{ fontSize: 12, color: "#78716c" }}>{clima.city || "Tu ubicación"}</div>
+        </div>
+        <button style={{ ...S.btnSmall, marginLeft: "auto" }} onClick={() => fetchClima(ubicacion.lat, ubicacion.lon)}>{"\uD83D\uDD04"}</button>
+      </div>
+
+      {/* Current weather */}
+      <div style={{ ...S.card, padding: 20, marginBottom: 12, textAlign: "center" }}>
+        <div style={{ fontSize: 56 }}>{weatherIcon(clima.current.icon)}</div>
+        <div style={{ fontFamily: "'Fredoka', sans-serif", fontWeight: 800, fontSize: 42, color: "#f59e0b" }}>{Math.round(clima.current.temp)}°</div>
+        <div style={{ fontSize: 14, color: "#78716c", textTransform: "capitalize" }}>{clima.current.description}</div>
+        <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 12, fontSize: 13, color: "#57534e" }}>
+          <span>{"\uD83C\uDF21\uFE0F"} ST {Math.round(clima.current.feels_like)}°</span>
+          <span>{"\uD83D\uDCA7"} {clima.current.humidity}%</span>
+          <span>{"\uD83C\uDF2C\uFE0F"} {Math.round(clima.current.wind)} km/h</span>
+        </div>
+      </div>
+
+      {/* Forecast */}
+      {clima.forecast && (
+        <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 4 }}>
+          {clima.forecast.map((day, i) => (
+            <div key={i} style={{ ...S.card, padding: "12px 14px", textAlign: "center", minWidth: 80, flexShrink: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "#78716c" }}>{day.day}</div>
+              <div style={{ fontSize: 24, margin: "6px 0" }}>{weatherIcon(day.icon)}</div>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>{Math.round(day.max)}°</div>
+              <div style={{ fontSize: 12, color: "#a3a3a3" }}>{Math.round(day.min)}°</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {clima.rain_alert && (
+        <div style={{ ...S.tipBox, background: "#eff6ff", borderColor: "#bfdbfe", color: "#1d4ed8", marginTop: 12 }}>
+          {"\u2614"} <strong>Alerta:</strong> {clima.rain_alert}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ═══════ CONFIG VIEW ═══════ */
 function ConfigView({ darkMode, setDarkMode }) {
   return (
@@ -1887,6 +2071,12 @@ export default function SuperMamu() {
 
         {/* FARMACIA CONTENT */}
         {category === "farmacia" && <FarmaciaView />}
+
+        {/* SERVICIOS CERCANOS CONTENT */}
+        {category === "servicios" && <ServiciosCercanosView />}
+
+        {/* CLIMA CONTENT */}
+        {category === "clima" && <ClimaView />}
       </div>
 
       {toast && <div style={S.toast}>{toast}</div>}
