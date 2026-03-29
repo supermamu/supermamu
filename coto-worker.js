@@ -34,6 +34,12 @@ export default {
       if (!refreshToken) return jsonResponse({ error: 'Falta refresh_token' }, 400);
       return await handleMeliRefresh(refreshToken, env);
     }
+    if (tienda === 'meli-api') {
+      const path = url.searchParams.get('path');
+      const token = url.searchParams.get('access_token');
+      if (!path) return jsonResponse({ error: 'Falta path' }, 400);
+      return await handleMeliApiProxy(path, token);
+    }
 
     if (!tienda || !query) {
       return new Response(JSON.stringify({ error: 'Faltan parámetros tienda y q' }), {
@@ -495,6 +501,33 @@ async function handleMercadoLibre(query, env) {
     });
   } catch (err) {
     return jsonResponse({ source: 'mercadolibre', error: err.message, productos: [] });
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// MERCADOLIBRE — Generic API Proxy (for authenticated calls)
+// ═══════════════════════════════════════════════════════
+
+async function handleMeliApiProxy(path, accessToken) {
+  try {
+    const apiUrl = 'https://api.mercadolibre.com' + (path.startsWith('/') ? path : '/' + path);
+    const headers = {
+      'Accept': 'application/json',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    };
+    if (accessToken) {
+      headers['Authorization'] = 'Bearer ' + accessToken;
+    }
+
+    const resp = await fetch(apiUrl, { headers });
+    const data = await resp.text();
+
+    return new Response(data, {
+      status: resp.status,
+      headers: { 'Content-Type': 'application/json', ...corsHeaders() },
+    });
+  } catch (err) {
+    return jsonResponse({ error: err.message }, 500);
   }
 }
 

@@ -1686,12 +1686,16 @@ function MercadoLibreView() {
     return meliToken.access_token;
   };
 
+  const meliApi = async (path, token) => {
+    const resp = await fetch(PROXY + "?tienda=meli-api&path=" + encodeURIComponent(path) + (token ? "&access_token=" + encodeURIComponent(token) : ""));
+    if (!resp.ok) return null;
+    return await resp.json();
+  };
+
   const fetchMeliUser = async (token) => {
     try {
-      const resp = await fetch("https://api.mercadolibre.com/users/me", {
-        headers: { Authorization: "Bearer " + token },
-      });
-      if (resp.ok) setMeliUser(await resp.json());
+      const data = await meliApi("/users/me", token);
+      if (data && data.id) setMeliUser(data);
     } catch {}
   };
 
@@ -1700,13 +1704,8 @@ function MercadoLibreView() {
     const token = await getValidToken();
     if (!token) { setLoadingAccount(false); return; }
     try {
-      const resp = await fetch("https://api.mercadolibre.com/orders/search?seller=" + meliToken.user_id + "&sort=date_desc&limit=10&buyer=" + meliToken.user_id, {
-        headers: { Authorization: "Bearer " + token },
-      });
-      if (resp.ok) {
-        const data = await resp.json();
-        setPurchases(data.results || []);
-      }
+      const data = await meliApi("/orders/search?buyer=" + meliToken.user_id + "&sort=date_desc&limit=10", token);
+      if (data) setPurchases(data.results || []);
     } catch {}
     setLoadingAccount(false);
   };
@@ -1716,13 +1715,8 @@ function MercadoLibreView() {
     const token = await getValidToken();
     if (!token) { setLoadingAccount(false); return; }
     try {
-      const resp = await fetch("https://api.mercadolibre.com/users/" + meliToken.user_id + "/bookmarks?limit=20", {
-        headers: { Authorization: "Bearer " + token },
-      });
-      if (resp.ok) {
-        const data = await resp.json();
-        setFavorites(Array.isArray(data) ? data : data.results || []);
-      }
+      const data = await meliApi("/users/" + meliToken.user_id + "/bookmarks?limit=20", token);
+      if (data) setFavorites(Array.isArray(data) ? data : data.results || []);
     } catch {}
     setLoadingAccount(false);
   };
