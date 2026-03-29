@@ -1620,6 +1620,7 @@ function MercadoLibreView() {
   const [balance, setBalance] = useState(null);
   const [balanceAdvice, setBalanceAdvice] = useState(null);
   const [loadingBalance, setLoadingBalance] = useState(false);
+  const [manualAmount, setManualAmount] = useState("");
   const [loadingData, setLoadingData] = useState(false);
 
   const logout = () => {
@@ -1767,26 +1768,12 @@ function MercadoLibreView() {
     setShipments(results);
   };
 
-  const fetchBalance = async () => {
-    setLoadingBalance(true); setBalance(null); setBalanceAdvice(null);
-    const token = await getValidToken();
-    if (!token) { setLoadingBalance(false); return; }
-    try {
-      const userId = meliToken.user_id || meliUser?.id;
-      // Try mercadopago account balance
-      let data = await meliApi("/users/" + userId + "/mercadopago_account/balance", token);
-      if (!data || data.error || data.message) {
-        // Fallback: try account info
-        data = await meliApi("/users/" + userId + "/mercadopago_account", token);
-      }
-      if (data && !data.error && !data.message) {
-        const bal = data.available_balance !== undefined ? data.available_balance : data.balance || data.total || 0;
-        setBalance({ available: bal, currency: data.currency_id || "ARS", total: data.total || bal });
-        fetchBalanceAdvice(bal);
-      } else {
-        setBalance({ error: "No se pudo obtener el saldo. Verificá que tu cuenta de MercadoPago esté vinculada." });
-      }
-    } catch { setBalance({ error: "Error al consultar el saldo" }); }
+  const fetchBalance = async (manualAmount) => {
+    const amount = parseFloat(manualAmount);
+    if (isNaN(amount) || amount < 0) return;
+    setBalance({ available: amount, currency: "ARS" });
+    setLoadingBalance(true); setBalanceAdvice(null);
+    await fetchBalanceAdvice(amount);
     setLoadingBalance(false);
   };
 
@@ -1868,7 +1855,6 @@ function MercadoLibreView() {
                 setSubTab(id);
                 if (id === "compras" && !purchases) fetchPurchases();
                 if (id === "envios" && !shipments) fetchPurchases();
-                if (id === "billetera" && !balance) fetchBalance();
               }}>{icon} {label}</button>
             ))}
           </div>
@@ -1937,32 +1923,39 @@ function MercadoLibreView() {
           {/* ── BILLETERA ── */}
           {subTab === "billetera" && (
             <div>
-              {loadingBalance && <div style={S.emptyState}><div style={{ ...S.spinner, borderTopColor: "#3483fa" }} /><div style={{ marginTop: 16 }}>Consultando saldo...</div></div>}
-
-              {balance && balance.error && (
-                <div style={S.emptyState}>
-                  <div style={{ fontSize: 48 }}>{"\uD83D\uDCB0"}</div>
-                  <div style={{ fontSize: 13, color: "#78716c", marginTop: 8, lineHeight: 1.5 }}>{balance.error}</div>
-                  <button style={{ ...S.btnPrimary, background: "#3483fa", marginTop: 12 }} onClick={fetchBalance}>Reintentar</button>
+              {!balance && !loadingBalance && (
+                <div>
+                  <div style={S.aiHero}><div style={{ fontSize: 48, marginBottom: 8 }}>{"\uD83D\uDCB0"}</div><h3 style={{ fontSize: 20, fontWeight: 800, fontFamily: "'Fredoka', sans-serif", marginBottom: 4 }}>Asesor Financiero IA</h3><p style={{ fontSize: 13, color: "#78716c", maxWidth: 280, margin: "0 auto" }}>Ingresá tu saldo y recibí recomendaciones personalizadas de ahorro, gasto e inversión</p></div>
+                  <div style={S.formGroup}>
+                    <label style={S.formLabel}>{"\uD83D\uDCB5"} ¿Cuánto tenés disponible? (ARS)</label>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <div style={{ flex: 1, position: "relative" }}>
+                        <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", fontSize: 16, color: "#78716c", fontWeight: 700 }}>$</span>
+                        <input style={{ ...S.input, paddingLeft: 30, fontSize: 18, fontWeight: 700 }} type="number" inputMode="numeric" value={manualAmount} onChange={(e) => setManualAmount(e.target.value)} onKeyDown={(e) => e.key === "Enter" && fetchBalance(manualAmount)} placeholder="50000" />
+                      </div>
+                      <button style={{ ...S.searchBtn, background: "#3483fa", fontSize: 14, padding: "12px 20px" }} onClick={() => fetchBalance(manualAmount)}>{"\u2728"}</button>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center", marginTop: 12 }}>
+                    {["10000", "50000", "100000", "250000", "500000", "1000000"].map((v) => (
+                      <button key={v} style={S.suggestionChip} onClick={() => { setManualAmount(v); fetchBalance(v); }}>${parseInt(v).toLocaleString("es-AR")}</button>
+                    ))}
+                  </div>
                 </div>
               )}
 
-              {balance && !balance.error && (
+              {loadingBalance && (
+                <div style={S.emptyState}><div style={{ ...S.spinner, borderTopColor: "#3483fa" }} /><div style={{ marginTop: 16 }}>La IA analiza tu situación financiera...</div></div>
+              )}
+
+              {balance && !loadingBalance && (
                 <div>
                   {/* Balance card */}
                   <div style={{ ...S.card, padding: 24, textAlign: "center", marginBottom: 16, background: "linear-gradient(135deg, #3483fa 0%, #2563eb 100%)", color: "#fff", borderRadius: 20 }}>
-                    <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 4 }}>Saldo disponible</div>
+                    <div style={{ fontSize: 14, opacity: 0.8, marginBottom: 4 }}>Saldo analizado</div>
                     <div style={{ fontFamily: "'Fredoka', sans-serif", fontWeight: 800, fontSize: 38 }}>${fmt(balance.available)}</div>
                     <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>{balance.currency || "ARS"}</div>
                   </div>
-
-                  {/* AI loading */}
-                  {!balanceAdvice && (
-                    <div style={{ ...S.card, padding: 16, textAlign: "center" }}>
-                      <div style={{ ...S.spinner, borderTopColor: "#3483fa", width: 24, height: 24, borderWidth: 2 }} />
-                      <div style={{ fontSize: 12, color: "#78716c", marginTop: 8 }}>La IA analiza tu saldo...</div>
-                    </div>
-                  )}
 
                   {/* AI advice */}
                   {balanceAdvice && (
@@ -1988,7 +1981,7 @@ function MercadoLibreView() {
                     </div>
                   )}
 
-                  <button style={{ ...S.btnSmall, width: "100%", textAlign: "center", padding: 12, color: "#3483fa" }} onClick={fetchBalance}>{"\uD83D\uDD04"} Actualizar saldo</button>
+                  <button style={{ ...S.btnSmall, width: "100%", textAlign: "center", padding: 12, color: "#3483fa" }} onClick={() => { setBalance(null); setBalanceAdvice(null); setManualAmount(""); }}>{"\u2190"} Analizar otro monto</button>
                 </div>
               )}
             </div>
