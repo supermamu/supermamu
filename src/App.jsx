@@ -16,6 +16,7 @@ const TIENDAS = [
 ];
 const VTEX_TIENDAS = TIENDAS.filter((t) => t.id !== "coto");
 const fmt = (n) => Number(n).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const toStr = (v) => { if (v === null || v === undefined) return ""; if (typeof v === "string") return v; if (Array.isArray(v)) return v.join(", "); if (typeof v === "object") return JSON.stringify(v); return String(v); };
 
 /* ═══════ CATEGORIES ═══════ */
 const CATEGORIES = [
@@ -1963,19 +1964,19 @@ function MercadoLibreView() {
                       <div style={{ padding: "10px 16px", background: "#eff6ff", borderBottom: "1px solid #bfdbfe", fontWeight: 700, fontSize: 13, color: "#1d4ed8" }}>{"\uD83E\uDD16"} Recomendaciones financieras</div>
                       <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
                         {balanceAdvice.resumen && (
-                          <div style={{ ...S.tipBox, margin: 0, background: "#f0fdf4", borderColor: "#bbf7d0", color: "#166534" }}>{"\uD83D\uDCA1"} {balanceAdvice.resumen}</div>
+                          <div style={{ ...S.tipBox, margin: 0, background: "#f0fdf4", borderColor: "#bbf7d0", color: "#166534" }}>{"\uD83D\uDCA1"} {toStr(balanceAdvice.resumen)}</div>
                         )}
                         <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                           <span style={{ fontSize: 20 }}>{"\uD83D\uDCB0"}</span>
-                          <div><div style={{ fontSize: 12, fontWeight: 700, color: "#78716c", marginBottom: 2 }}>Ahorro</div><div style={{ fontSize: 13, lineHeight: 1.5 }}>{balanceAdvice.ahorro}</div></div>
+                          <div><div style={{ fontSize: 12, fontWeight: 700, color: "#78716c", marginBottom: 2 }}>Ahorro</div><div style={{ fontSize: 13, lineHeight: 1.5 }}>{toStr(balanceAdvice.ahorro)}</div></div>
                         </div>
                         <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                           <span style={{ fontSize: 20 }}>{"\uD83D\uDED2"}</span>
-                          <div><div style={{ fontSize: 12, fontWeight: 700, color: "#78716c", marginBottom: 2 }}>Gasto inteligente</div><div style={{ fontSize: 13, lineHeight: 1.5 }}>{balanceAdvice.gasto}</div></div>
+                          <div><div style={{ fontSize: 12, fontWeight: 700, color: "#78716c", marginBottom: 2 }}>Gasto inteligente</div><div style={{ fontSize: 13, lineHeight: 1.5 }}>{toStr(balanceAdvice.gasto)}</div></div>
                         </div>
                         <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                           <span style={{ fontSize: 20 }}>{"\uD83D\uDCC8"}</span>
-                          <div><div style={{ fontSize: 12, fontWeight: 700, color: "#78716c", marginBottom: 2 }}>Inversión</div><div style={{ fontSize: 13, lineHeight: 1.5 }}>{balanceAdvice.inversion}</div></div>
+                          <div><div style={{ fontSize: 12, fontWeight: 700, color: "#78716c", marginBottom: 2 }}>Inversión</div><div style={{ fontSize: 13, lineHeight: 1.5 }}>{toStr(balanceAdvice.inversion)}</div></div>
                         </div>
                       </div>
                     </div>
@@ -2177,10 +2178,10 @@ function ClimaView({ userProfile }) {
     text += "\u2601\uFE0F " + c.description + "\n";
     if (clima.rain_alert) text += "\n\u2614 " + clima.rain_alert + "\n";
     if (recomendacion) {
-      text += "\n\uD83D\uDC55 *Vestimenta:* " + recomendacion.vestimenta + "\n";
-      if (recomendacion.hijos) text += "\uD83D\uDC76 *Chicos:* " + recomendacion.hijos + "\n";
-      if (recomendacion.mascotas) text += "\uD83D\uDC3E *Mascotas:* " + recomendacion.mascotas + "\n";
-      text += "\n\uD83D\uDCA1 " + recomendacion.consejo;
+      text += "\n\uD83D\uDC55 *Vestimenta:* " + toStr(recomendacion.vestimenta) + "\n";
+      if (recomendacion.hijos) text += "\uD83D\uDC76 *Chicos:* " + toStr(recomendacion.hijos) + "\n";
+      if (recomendacion.mascotas) text += "\uD83D\uDC3E *Mascotas:* " + toStr(recomendacion.mascotas) + "\n";
+      text += "\n\uD83D\uDCA1 " + toStr(recomendacion.consejo);
     }
     text += "\n\n\uD83D\uDCF1 supermamu.com.ar";
     window.open("https://wa.me/?text=" + encodeURIComponent(text), "_blank");
@@ -2323,21 +2324,21 @@ function ClimaView({ userProfile }) {
           <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
             <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
               <span style={{ fontSize: 20 }}>{"\uD83D\uDC55"}</span>
-              <div><div style={{ fontSize: 12, fontWeight: 700, color: "#78716c", marginBottom: 2 }}>Vestimenta</div><div style={{ fontSize: 13, lineHeight: 1.5 }}>{recomendacion.vestimenta}</div></div>
+              <div><div style={{ fontSize: 12, fontWeight: 700, color: "#78716c", marginBottom: 2 }}>Vestimenta</div><div style={{ fontSize: 13, lineHeight: 1.5 }}>{toStr(recomendacion.vestimenta)}</div></div>
             </div>
             {recomendacion.hijos && (
               <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                 <span style={{ fontSize: 20 }}>{"\uD83D\uDC76"}</span>
-                <div><div style={{ fontSize: 12, fontWeight: 700, color: "#78716c", marginBottom: 2 }}>Los chicos</div><div style={{ fontSize: 13, lineHeight: 1.5 }}>{recomendacion.hijos}</div></div>
+                <div><div style={{ fontSize: 12, fontWeight: 700, color: "#78716c", marginBottom: 2 }}>Los chicos</div><div style={{ fontSize: 13, lineHeight: 1.5 }}>{toStr(recomendacion.hijos)}</div></div>
               </div>
             )}
             {recomendacion.mascotas && (
               <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                 <span style={{ fontSize: 20 }}>{"\uD83D\uDC3E"}</span>
-                <div><div style={{ fontSize: 12, fontWeight: 700, color: "#78716c", marginBottom: 2 }}>Mascotas</div><div style={{ fontSize: 13, lineHeight: 1.5 }}>{recomendacion.mascotas}</div></div>
+                <div><div style={{ fontSize: 12, fontWeight: 700, color: "#78716c", marginBottom: 2 }}>Mascotas</div><div style={{ fontSize: 13, lineHeight: 1.5 }}>{toStr(recomendacion.mascotas)}</div></div>
               </div>
             )}
-            <div style={{ ...S.tipBox, margin: 0 }}>{"\uD83D\uDCA1"} {recomendacion.consejo}</div>
+            <div style={{ ...S.tipBox, margin: 0 }}>{"\uD83D\uDCA1"} {toStr(recomendacion.consejo)}</div>
           </div>
         </div>
       )}
