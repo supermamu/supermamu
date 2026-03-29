@@ -26,6 +26,7 @@ const CATEGORIES = [
   { id: "farmacia", label: "Farmacia", icon: "\uD83D\uDC8A", color: "#9333ea" },
   { id: "servicios", label: "Servicios", icon: "\uD83D\uDCCD", color: "#0891b2" },
   { id: "clima", label: "Clima", icon: "\u2600\uFE0F", color: "#f59e0b" },
+  { id: "descuentos", label: "Descuentos", icon: "\uD83C\uDF81", color: "#e11d48" },
 ];
 
 const MELI_CLIENT_ID = "782955723270657";
@@ -1967,23 +1968,72 @@ function ServiciosCercanosView() {
    CLIMA
    ═══════════════════════════════════════════════════ */
 
-function ClimaView() {
+function ClimaView({ userProfile }) {
   const [clima, setClima] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [ubicacion, setUbicacion] = useState(null);
+  const [recomendacion, setRecomendacion] = useState(null);
+  const [loadingRec, setLoadingRec] = useState(false);
 
   const fetchClima = async (lat, lon) => {
-    setLoading(true); setError(null);
+    setLoading(true); setError(null); setRecomendacion(null);
     try {
       const resp = await fetch(TRANSPORTE_PROXY + "?tipo=clima&lat=" + lat + "&lon=" + lon);
       if (!resp.ok) throw new Error("Error " + resp.status);
       const data = await resp.json();
       setClima(data);
+      if (data.current) fetchRecomendacion(data);
     } catch (e) {
       setError(e.message);
     }
     setLoading(false);
+  };
+
+  const fetchRecomendacion = async (climaData) => {
+    setLoadingRec(true);
+    try {
+      const hijosText = userProfile?.hijos?.length ? "Tiene " + userProfile.hijos.length + " hijo/s de " + userProfile.hijos.map((h) => h.edad + " años").join(", ") + "." : "";
+      const mascotasText = userProfile?.mascotas?.length ? "Tiene mascotas: " + userProfile.mascotas.map((m) => m.tipo).join(", ") + "." : "";
+      const nombre = userProfile?.nombre ? "El usuario se llama " + userProfile.nombre + "." : "";
+
+      const prompt = nombre + " " + hijosText + " " + mascotasText + "\n\nClima actual en " + (climaData.city || "su zona") + ":\n- Temperatura: " + Math.round(climaData.current.temp) + "°C\n- Sensación térmica: " + Math.round(climaData.current.feels_like) + "°C\n- Humedad: " + climaData.current.humidity + "%\n- Viento: " + Math.round(climaData.current.wind) + " km/h\n- Condición: " + climaData.current.description + "\n" + (climaData.rain_alert ? "- ALERTA: Se esperan lluvias\n" : "") + "\nDame una recomendación breve y práctica de:\n1. Cómo vestirse el/la usuario/a\n2. Cómo vestir a sus hijos (si tiene, según la edad)\n3. Cuidados con las mascotas (si tiene)\n4. Un consejo general del día\n\nSé conciso, usá emojis, y hablá en argentino (vos). Máximo 150 palabras.\n\nRespondé ÚNICAMENTE con JSON:\n{\"vestimenta\":\"recomendación para el adulto\",\"hijos\":\"recomendación para los chicos (o null si no tiene)\",\"mascotas\":\"recomendación para mascotas (o null si no tiene)\",\"consejo\":\"consejo general del día\"}";
+
+      const resp = await fetch(AI_PROXY, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "arcee-ai/trinity-large-preview:free", messages: [{ role: "system", content: "Respondés ÚNICAMENTE con JSON válido. Sos un asistente argentino simpático." }, { role: "user", content: prompt }], max_tokens: 512, temperature: 0.7 }),
+      });
+      if (resp.ok) {
+        const raw = await resp.text();
+        let data; try { data = JSON.parse(raw); } catch { return; }
+        let content = data.choices?.[0]?.message?.content || "";
+        content = content.replace(/```json\s*/gi, "").replace(/```\s*/gi, "").trim();
+        const js = content.indexOf("{"), je = content.lastIndexOf("}");
+        if (js !== -1 && je !== -1) {
+          try { setRecomendacion(JSON.parse(content.slice(js, je + 1))); } catch {}
+        }
+      }
+    } catch {}
+    setLoadingRec(false);
+  };
+
+  const shareClimaWhatsApp = () => {
+    const c = clima?.current;
+    if (!c) return;
+    let text = "\u2600\uFE0F *Clima en " + (clima.city || "mi zona") + "* (SuperMamu)\n\n";
+    text += "\uD83C\uDF21\uFE0F " + Math.round(c.temp) + "°C (ST " + Math.round(c.feels_like) + "°C)\n";
+    text += "\uD83D\uDCA7 Humedad: " + c.humidity + "% · \uD83C\uDF2C\uFE0F Viento: " + Math.round(c.wind) + " km/h\n";
+    text += "\u2601\uFE0F " + c.description + "\n";
+    if (clima.rain_alert) text += "\n\u2614 " + clima.rain_alert + "\n";
+    if (recomendacion) {
+      text += "\n\uD83D\uDC55 *Vestimenta:* " + recomendacion.vestimenta + "\n";
+      if (recomendacion.hijos) text += "\uD83D\uDC76 *Chicos:* " + recomendacion.hijos + "\n";
+      if (recomendacion.mascotas) text += "\uD83D\uDC3E *Mascotas:* " + recomendacion.mascotas + "\n";
+      text += "\n\uD83D\uDCA1 " + recomendacion.consejo;
+    }
+    text += "\n\n\uD83D\uDCF1 supermamu.com.ar";
+    window.open("https://wa.me/?text=" + encodeURIComponent(text), "_blank");
   };
 
   const getLocation = () => {
@@ -2033,7 +2083,7 @@ function ClimaView() {
         <div style={{ fontSize: 56, marginBottom: 12 }}>{"\u2600\uFE0F"}</div>
         <div style={{ fontWeight: 600 }}>Clima - Próximamente</div>
         <div style={{ fontSize: 13, color: "#a3a3a3", marginTop: 8, lineHeight: 1.5 }}>
-          Esta función estará disponible pronto. Se necesita configurar la API key de OpenWeatherMap.
+          Esta función estará disponible pronto.
         </div>
       </div>
     );
@@ -2049,7 +2099,10 @@ function ClimaView() {
           <h3 style={{ fontSize: 18, fontWeight: 800, fontFamily: "'Fredoka', sans-serif", margin: 0 }}>Clima</h3>
           <div style={{ fontSize: 12, color: "#78716c" }}>{clima.city || "Tu ubicación"}</div>
         </div>
-        <button style={{ ...S.btnSmall, marginLeft: "auto" }} onClick={() => fetchClima(ubicacion.lat, ubicacion.lon)}>{"\uD83D\uDD04"}</button>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+          <button style={{ ...S.btnSmall, color: "#25d366", fontSize: 12 }} onClick={shareClimaWhatsApp}>{"\uD83D\uDCE4"}</button>
+          <button style={S.btnSmall} onClick={() => fetchClima(ubicacion.lat, ubicacion.lon)}>{"\uD83D\uDD04"}</button>
+        </div>
       </div>
 
       {/* Current weather */}
@@ -2063,6 +2116,39 @@ function ClimaView() {
           <span>{"\uD83C\uDF2C\uFE0F"} {Math.round(clima.current.wind)} km/h</span>
         </div>
       </div>
+
+      {/* AI Recommendations */}
+      {loadingRec && (
+        <div style={{ ...S.card, padding: 16, marginBottom: 12, textAlign: "center" }}>
+          <div style={{ ...S.spinner, borderTopColor: "#f59e0b", width: 24, height: 24, borderWidth: 2 }} />
+          <div style={{ fontSize: 12, color: "#78716c", marginTop: 8 }}>La IA analiza el clima...</div>
+        </div>
+      )}
+
+      {recomendacion && (
+        <div style={{ ...S.card, marginBottom: 12, overflow: "hidden" }}>
+          <div style={{ padding: "10px 16px", background: "#fef3c7", borderBottom: "1px solid #fde68a", fontWeight: 700, fontSize: 13, color: "#92400e" }}>{"\uD83E\uDD16"} Recomendación del día</div>
+          <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+              <span style={{ fontSize: 20 }}>{"\uD83D\uDC55"}</span>
+              <div><div style={{ fontSize: 12, fontWeight: 700, color: "#78716c", marginBottom: 2 }}>Vestimenta</div><div style={{ fontSize: 13, lineHeight: 1.5 }}>{recomendacion.vestimenta}</div></div>
+            </div>
+            {recomendacion.hijos && (
+              <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                <span style={{ fontSize: 20 }}>{"\uD83D\uDC76"}</span>
+                <div><div style={{ fontSize: 12, fontWeight: 700, color: "#78716c", marginBottom: 2 }}>Los chicos</div><div style={{ fontSize: 13, lineHeight: 1.5 }}>{recomendacion.hijos}</div></div>
+              </div>
+            )}
+            {recomendacion.mascotas && (
+              <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                <span style={{ fontSize: 20 }}>{"\uD83D\uDC3E"}</span>
+                <div><div style={{ fontSize: 12, fontWeight: 700, color: "#78716c", marginBottom: 2 }}>Mascotas</div><div style={{ fontSize: 13, lineHeight: 1.5 }}>{recomendacion.mascotas}</div></div>
+              </div>
+            )}
+            <div style={{ ...S.tipBox, margin: 0 }}>{"\uD83D\uDCA1"} {recomendacion.consejo}</div>
+          </div>
+        </div>
+      )}
 
       {/* Forecast */}
       {clima.forecast && (
@@ -2087,8 +2173,141 @@ function ClimaView() {
   );
 }
 
+/* ═══════════════════════════════════════════════════
+   DESCUENTOS BANCARIOS
+   ═══════════════════════════════════════════════════ */
+
+const DESCUENTOS_DATA = [
+  { dia: "Lunes", lugar: "Jumbo / Disco / Vea", banco: "Banco Galicia", descuento: "25%", tope: "$15.000", detalle: "Con tarjetas Galicia" },
+  { dia: "Lunes", lugar: "Carrefour", banco: "BBVA", descuento: "15%", tope: "$12.000", detalle: "Con tarjetas BBVA" },
+  { dia: "Martes", lugar: "Coto", banco: "Banco Nación", descuento: "20%", tope: "$10.000", detalle: "Con tarjetas BNA" },
+  { dia: "Martes", lugar: "Farmacity", banco: "Banco Ciudad", descuento: "25%", tope: "$8.000", detalle: "Con tarjetas Ciudad" },
+  { dia: "Miércoles", lugar: "Jumbo / Disco / Vea", banco: "Banco Nación", descuento: "25%", tope: "$15.000", detalle: "Con tarjetas BNA" },
+  { dia: "Miércoles", lugar: "Carrefour", banco: "Banco Provincia", descuento: "15%", tope: "$10.000", detalle: "Con tarjetas Bapro" },
+  { dia: "Miércoles", lugar: "Changomás", banco: "Mercado Pago", descuento: "15%", tope: "$5.000", detalle: "Pagando con QR" },
+  { dia: "Jueves", lugar: "Coto", banco: "Banco Galicia", descuento: "15%", tope: "$10.000", detalle: "Con tarjetas Galicia" },
+  { dia: "Jueves", lugar: "Carrefour", banco: "Banco Santander", descuento: "20%", tope: "$12.000", detalle: "Con tarjetas Santander" },
+  { dia: "Viernes", lugar: "Día", banco: "Banco Provincia", descuento: "20%", tope: "$8.000", detalle: "Con tarjetas Bapro" },
+  { dia: "Viernes", lugar: "Jumbo / Disco / Vea", banco: "HSBC", descuento: "15%", tope: "$10.000", detalle: "Con tarjetas HSBC" },
+  { dia: "Sábado", lugar: "Carrefour", banco: "Banco Nación", descuento: "20%", tope: "$15.000", detalle: "Con tarjetas BNA" },
+  { dia: "Sábado", lugar: "Coto", banco: "Banco Provincia", descuento: "15%", tope: "$8.000", detalle: "Con tarjetas Bapro" },
+  { dia: "Domingo", lugar: "Jumbo / Disco / Vea", banco: "Banco Macro", descuento: "15%", tope: "$10.000", detalle: "Con tarjetas Macro" },
+  { dia: "Todos los días", lugar: "MercadoLibre", banco: "Mercado Pago", descuento: "Cuotas sin interés", tope: "", detalle: "Hasta 12 cuotas en productos seleccionados" },
+  { dia: "Todos los días", lugar: "Farmacity", banco: "Naranja X", descuento: "10%", tope: "$5.000", detalle: "Con tarjeta Naranja" },
+];
+
+const DIAS_SEMANA = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+
+function DescuentosView({ userProfile }) {
+  const [filtro, setFiltro] = useState("hoy");
+  const hoy = DIAS_SEMANA[new Date().getDay()];
+
+  const misBancos = userProfile?.bancos || [];
+  const hasBancos = misBancos.length > 0;
+
+  let filtered;
+  if (filtro === "hoy") {
+    filtered = DESCUENTOS_DATA.filter((d) => d.dia === hoy || d.dia === "Todos los días");
+  } else if (filtro === "mis-bancos") {
+    filtered = DESCUENTOS_DATA.filter((d) => misBancos.some((b) => d.banco.toLowerCase().includes(b.toLowerCase()) || b.toLowerCase().includes(d.banco.split(" ").pop().toLowerCase())));
+  } else {
+    filtered = DESCUENTOS_DATA;
+  }
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+        <span style={{ fontSize: 28 }}>{"\uD83C\uDF81"}</span>
+        <div>
+          <h3 style={{ fontSize: 18, fontWeight: 800, fontFamily: "'Fredoka', sans-serif", margin: 0 }}>Descuentos</h3>
+          <div style={{ fontSize: 12, color: "#78716c" }}>Hoy es {hoy}</div>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+        <button style={{ ...S.chipBtn, flex: 1, fontSize: 13, ...(filtro === "hoy" ? { background: "#e11d48", color: "#fff", borderColor: "#e11d48" } : {}) }} onClick={() => setFiltro("hoy")}>{"\uD83D\uDCC5"} Hoy</button>
+        {hasBancos && <button style={{ ...S.chipBtn, flex: 1, fontSize: 13, ...(filtro === "mis-bancos" ? { background: "#e11d48", color: "#fff", borderColor: "#e11d48" } : {}) }} onClick={() => setFiltro("mis-bancos")}>{"\uD83C\uDFE6"} Mis bancos</button>}
+        <button style={{ ...S.chipBtn, flex: 1, fontSize: 13, ...(filtro === "todos" ? { background: "#e11d48", color: "#fff", borderColor: "#e11d48" } : {}) }} onClick={() => setFiltro("todos")}>{"\uD83D\uDCCB"} Todos</button>
+      </div>
+
+      {!hasBancos && (
+        <div style={{ ...S.tipBox, background: "#fff1f2", borderColor: "#fecdd3", color: "#be123c", marginBottom: 16 }}>
+          {"\uD83C\uDFE6"} Configurá tus bancos en <strong>⚙️ Config</strong> para ver descuentos personalizados.
+        </div>
+      )}
+
+      {filtered.length === 0 && (
+        <div style={S.emptyState}><div style={{ fontSize: 48 }}>{"\uD83D\uDE45"}</div><div>No se encontraron descuentos</div></div>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {filtered.map((d, i) => {
+          const isMiBanco = misBancos.some((b) => d.banco.toLowerCase().includes(b.toLowerCase()) || b.toLowerCase().includes(d.banco.split(" ").pop().toLowerCase()));
+          return (
+            <div key={i} style={{ ...S.card, padding: 14, borderLeft: isMiBanco ? "4px solid #e11d48" : "4px solid transparent" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>{d.lugar}</div>
+                  <div style={{ fontSize: 13, color: "#78716c", marginTop: 2 }}>{d.banco}</div>
+                  <div style={{ fontSize: 12, color: "#a3a3a3", marginTop: 2 }}>{d.detalle}</div>
+                  {filtro !== "hoy" && <div style={{ fontSize: 11, color: "#e11d48", marginTop: 3 }}>{d.dia}</div>}
+                </div>
+                <div style={{ textAlign: "right", flexShrink: 0 }}>
+                  <div style={{ fontFamily: "'Fredoka', sans-serif", fontWeight: 800, fontSize: 22, color: "#e11d48" }}>{d.descuento}</div>
+                  {d.tope && <div style={{ fontSize: 11, color: "#a3a3a3" }}>Tope {d.tope}</div>}
+                </div>
+              </div>
+              {isMiBanco && <span style={{ fontSize: 10, background: "#e11d48", color: "#fff", padding: "1px 8px", borderRadius: 6, fontWeight: 600, display: "inline-block", marginTop: 6 }}>{"\u2B50"} Tu banco</span>}
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ textAlign: "center", fontSize: 11, color: "#a3a3a3", marginTop: 16, lineHeight: 1.5 }}>
+        Los descuentos pueden variar. Verificá en cada supermercado las condiciones vigentes.
+      </div>
+    </div>
+  );
+}
+
 /* ═══════ CONFIG VIEW ═══════ */
-function ConfigView({ darkMode, setDarkMode }) {
+const BANCOS_ARGENTINA = [
+  "Banco Nación", "Banco Provincia", "Banco Ciudad", "Banco Galicia", "Banco Santander",
+  "BBVA", "HSBC", "Banco Macro", "Banco Patagonia", "Banco Hipotecario",
+  "Banco Credicoop", "Banco Comafi", "Banco ICBC", "Banco Supervielle", "Banco Itaú",
+  "Brubank", "Ualá", "Mercado Pago", "Naranja X", "Personal Pay", "MODO",
+];
+
+function ConfigView({ darkMode, setDarkMode, userProfile, setUserProfile }) {
+  const [newHijoEdad, setNewHijoEdad] = useState("");
+  const [newMascota, setNewMascota] = useState("");
+  const [showBancos, setShowBancos] = useState(false);
+
+  const addHijo = () => {
+    const edad = parseInt(newHijoEdad);
+    if (isNaN(edad) || edad < 0 || edad > 18) return;
+    setUserProfile((p) => ({ ...p, hijos: [...p.hijos, { id: Date.now(), edad }] }));
+    setNewHijoEdad("");
+  };
+
+  const removeHijo = (id) => setUserProfile((p) => ({ ...p, hijos: p.hijos.filter((h) => h.id !== id) }));
+
+  const addMascota = () => {
+    if (!newMascota.trim()) return;
+    setUserProfile((p) => ({ ...p, mascotas: [...p.mascotas, { id: Date.now(), tipo: newMascota.trim() }] }));
+    setNewMascota("");
+  };
+
+  const removeMascota = (id) => setUserProfile((p) => ({ ...p, mascotas: p.mascotas.filter((m) => m.id !== id) }));
+
+  const toggleBanco = (banco) => {
+    setUserProfile((p) => ({
+      ...p,
+      bancos: p.bancos.includes(banco) ? p.bancos.filter((b) => b !== banco) : [...p.bancos, banco],
+    }));
+  };
+
   return (
     <div>
       <div style={S.aiHero}><div style={{ fontSize: 48, marginBottom: 8 }}>{"\u2699\uFE0F"}</div><h3 style={{ fontSize: 20, fontWeight: 800, fontFamily: "'Fredoka', sans-serif" }}>Configuración</h3></div>
@@ -2106,18 +2325,83 @@ function ConfigView({ darkMode, setDarkMode }) {
           width: 52, height: 28, borderRadius: 14, border: "none", cursor: "pointer",
           background: darkMode ? "#ea580c" : "#d6d3d1", position: "relative", transition: "background 0.3s",
         }}>
-          <span style={{
-            position: "absolute", top: 3, left: darkMode ? 27 : 3,
-            width: 22, height: 22, borderRadius: "50%", background: "#fff",
-            transition: "left 0.3s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
-          }} />
+          <span style={{ position: "absolute", top: 3, left: darkMode ? 27 : 3, width: 22, height: 22, borderRadius: "50%", background: "#fff", transition: "left 0.3s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }} />
         </button>
+      </div>
+
+      {/* Nombre */}
+      <div style={{ ...S.card, padding: 16, marginBottom: 12 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>{"\uD83D\uDC64"} Tu nombre</div>
+        <input style={S.input} value={userProfile.nombre || ""} onChange={(e) => setUserProfile((p) => ({ ...p, nombre: e.target.value }))} placeholder="¿Cómo te llamás?" />
+      </div>
+
+      {/* Hijos */}
+      <div style={{ ...S.card, padding: 16, marginBottom: 12 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>{"\uD83D\uDC76"} Hijos</div>
+        {userProfile.hijos.length > 0 && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+            {userProfile.hijos.map((h) => (
+              <span key={h.id} style={{ ...S.cartChip, padding: "4px 10px", display: "flex", alignItems: "center", gap: 4 }}>
+                {h.edad} año{h.edad !== 1 ? "s" : ""}
+                <button style={{ border: "none", background: "transparent", color: "#a3a3a3", cursor: "pointer", fontSize: 12, padding: 0 }} onClick={() => removeHijo(h.id)}>{"\u2715"}</button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 8 }}>
+          <input style={{ ...S.input, flex: 1 }} type="number" inputMode="numeric" min="0" max="18" value={newHijoEdad} onChange={(e) => setNewHijoEdad(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addHijo()} placeholder="Edad del hijo/a" />
+          <button style={{ ...S.searchBtn, fontSize: 14 }} onClick={addHijo}>+</button>
+        </div>
+      </div>
+
+      {/* Mascotas */}
+      <div style={{ ...S.card, padding: 16, marginBottom: 12 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>{"\uD83D\uDC3E"} Mascotas</div>
+        {userProfile.mascotas.length > 0 && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+            {userProfile.mascotas.map((m) => (
+              <span key={m.id} style={{ ...S.cartChip, padding: "4px 10px", display: "flex", alignItems: "center", gap: 4 }}>
+                {m.tipo}
+                <button style={{ border: "none", background: "transparent", color: "#a3a3a3", cursor: "pointer", fontSize: 12, padding: 0 }} onClick={() => removeMascota(m.id)}>{"\u2715"}</button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 8 }}>
+          <input style={{ ...S.input, flex: 1 }} value={newMascota} onChange={(e) => setNewMascota(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addMascota()} placeholder="Ej: perro, gato..." />
+          <button style={{ ...S.searchBtn, fontSize: 14 }} onClick={addMascota}>+</button>
+        </div>
+      </div>
+
+      {/* Bancos */}
+      <div style={{ ...S.card, padding: 16, marginBottom: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <div style={{ fontSize: 14, fontWeight: 700 }}>{"\uD83C\uDFE6"} Mis bancos y billeteras</div>
+          <button style={{ ...S.btnSmall, fontSize: 12 }} onClick={() => setShowBancos(!showBancos)}>{showBancos ? "Listo" : "Editar"}</button>
+        </div>
+        {userProfile.bancos.length > 0 && !showBancos && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {userProfile.bancos.map((b) => (
+              <span key={b} style={{ ...S.cartChip, ...S.cartChipBest, padding: "4px 10px" }}>{b}</span>
+            ))}
+          </div>
+        )}
+        {userProfile.bancos.length === 0 && !showBancos && (
+          <div style={{ fontSize: 13, color: "#a3a3a3" }}>Agregá tus bancos para ver descuentos personalizados</div>
+        )}
+        {showBancos && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+            {BANCOS_ARGENTINA.map((b) => (
+              <button key={b} style={{ ...S.chipBtn, fontSize: 12, padding: "6px 12px", ...(userProfile.bancos.includes(b) ? { background: "#16a34a", color: "#fff", borderColor: "#16a34a" } : {}) }} onClick={() => toggleBanco(b)}>{b}</button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div style={{ ...S.card, padding: 16 }}>
         <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>{"\uD83D\uDCF1"} Sobre SuperMamu</div>
-        <p style={{ fontSize: 13, color: "#78716c", lineHeight: 1.6 }}>Tu gestor del hogar: compará precios de supermercados, consultá precios de nafta, estado del transporte público, medicamentos y cotizaciones del dólar.</p>
-        <div style={{ fontSize: 12, color: "#a3a3a3", marginTop: 12 }}>Menú IA por OpenRouter · Transporte por API BA · v2.1</div>
+        <p style={{ fontSize: 13, color: "#78716c", lineHeight: 1.6 }}>Tu gestor del hogar: compará precios de supermercados, MercadoLibre, consultá nafta, transporte, medicamentos, dólar, clima, descuentos bancarios y más.</p>
+        <div style={{ fontSize: 12, color: "#a3a3a3", marginTop: 12 }}>supermamu.com.ar · v3.0</div>
       </div>
     </div>
   );
@@ -2129,6 +2413,7 @@ function ConfigView({ darkMode, setDarkMode }) {
 export default function SuperMamu() {
   const [category, setCategory] = useState("super");
   const [darkMode, setDarkMode] = useState(false);
+  const [userProfile, setUserProfile] = useState({ nombre: "", hijos: [], mascotas: [], bancos: [] });
   const [tab, setTab] = useState("buscar");
   const [transporteTab, setTransporteTab] = useState("transporte");
   const [query, setQuery] = useState("");
@@ -2165,11 +2450,13 @@ export default function SuperMamu() {
     } catch {}
     if (!document.getElementById("html5qr-script")) { const s = document.createElement("script"); s.id = "html5qr-script"; s.src = "https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"; s.async = true; document.head.appendChild(s); }
     try { if (localStorage.getItem("supermamu_dark") === "1") setDarkMode(true); } catch {}
+    try { const up = localStorage.getItem("supermamu_profile"); if (up) setUserProfile(JSON.parse(up)); } catch {}
   }, []);
 
   useEffect(() => { if (tab !== "buscar" && scannerActive) stopScanner(); }, [tab, scannerActive]);
   useEffect(() => { try { localStorage.setItem("supermamu_cart", JSON.stringify(cart)); } catch {} }, [cart]);
   useEffect(() => { try { localStorage.setItem("supermamu_dark", darkMode ? "1" : "0"); document.body.style.background = darkMode ? "#1a1a1a" : "#faf9f6"; } catch {} }, [darkMode]);
+  useEffect(() => { try { localStorage.setItem("supermamu_profile", JSON.stringify(userProfile)); } catch {} }, [userProfile]);
   useEffect(() => { try { localStorage.setItem("supermamu_listas_v2", JSON.stringify({ activeId: activeListaId, lists: listas })); } catch {} }, [listas, activeListaId]);
 
   const showToast = useCallback((msg) => { setToast(msg); setTimeout(() => setToast(null), 2500); }, []);
@@ -2366,11 +2653,11 @@ export default function SuperMamu() {
         {category === "super" && tab === "menu" && <MenuIA setTab={setTab} onSearchProduct={(q) => { setQuery(q); setTab("buscar"); setTimeout(() => doSearchOptions(q), 100); }} menuStep={menuStep} setMenuStep={setMenuStep} menuResult={menuResult} setMenuResult={setMenuResult} onAddToLista={addToLista} onAddAllToLista={addAllIngredientsToLista} />}
         {category === "super" && tab === "lista" && <ListaView listas={listas} setListas={setListas} activeListaId={activeListaId} setActiveListaId={setActiveListaId} lista={activeListaItems} setLista={setActiveListaItems} onSearchProduct={(q) => { setQuery(q); setTab("buscar"); setTimeout(() => doSearchOptions(q), 100); }} />}
         {category === "super" && tab === "carrito" && <CartView cart={cart} setCart={setCart} />}
-        {category === "super" && tab === "config" && <ConfigView darkMode={darkMode} setDarkMode={setDarkMode} />}
+        {category === "super" && tab === "config" && <ConfigView darkMode={darkMode} setDarkMode={setDarkMode} userProfile={userProfile} setUserProfile={setUserProfile} />}
 
         {/* TRANSPORTE CONTENT */}
         {category === "transporte" && transporteTab === "transporte" && <TransporteView />}
-        {category === "transporte" && transporteTab === "config" && <ConfigView darkMode={darkMode} setDarkMode={setDarkMode} />}
+        {category === "transporte" && transporteTab === "config" && <ConfigView darkMode={darkMode} setDarkMode={setDarkMode} userProfile={userProfile} setUserProfile={setUserProfile} />}
 
         {/* DOLAR CONTENT */}
         {category === "dolar" && <DolarView />}
@@ -2385,7 +2672,10 @@ export default function SuperMamu() {
         {category === "servicios" && <ServiciosCercanosView />}
 
         {/* CLIMA CONTENT */}
-        {category === "clima" && <ClimaView />}
+        {category === "clima" && <ClimaView userProfile={userProfile} />}
+
+        {/* DESCUENTOS CONTENT */}
+        {category === "descuentos" && <DescuentosView userProfile={userProfile} />}
       </div>
 
       {toast && <div style={S.toast}>{toast}</div>}

@@ -23,6 +23,18 @@ export default {
     const tienda = url.searchParams.get('tienda');
     const query  = url.searchParams.get('q');
 
+    // ── MercadoLibre OAuth (no requiere 'q') ──
+    if (tienda === 'meli-token') {
+      const code = url.searchParams.get('code');
+      if (!code) return jsonResponse({ error: 'Falta parámetro code' }, 400);
+      return await handleMeliTokenExchange(code, env);
+    }
+    if (tienda === 'meli-refresh') {
+      const refreshToken = url.searchParams.get('refresh_token');
+      if (!refreshToken) return jsonResponse({ error: 'Falta refresh_token' }, 400);
+      return await handleMeliRefresh(refreshToken, env);
+    }
+
     if (!tienda || !query) {
       return new Response(JSON.stringify({ error: 'Faltan parámetros tienda y q' }), {
         status: 400, headers: corsHeaders()
@@ -462,6 +474,69 @@ async function handleMercadoLibre(query) {
 }
 
 // ═══════════════════════════════════════════════════════
+// MERCADOLIBRE — OAuth Token Exchange
+// ═══════════════════════════════════════════════════════
+
+async function handleMeliTokenExchange(code, env) {
+  try {
+    const resp = await fetch('https://api.mercadolibre.com/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        client_id: env.MELI_CLIENT_ID || '782955723270657',
+        client_secret: env.MELI_CLIENT_SECRET,
+        code: code,
+        redirect_uri: 'https://supermamu.com.ar/callback',
+      }),
+    });
+
+    const data = await resp.json();
+    if (!resp.ok) {
+      return jsonResponse({ error: data.message || 'Error de autenticación', detail: data }, resp.status);
+    }
+
+    return jsonResponse({
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      expires_in: data.expires_in,
+      user_id: data.user_id,
+    });
+  } catch (err) {
+    return jsonResponse({ error: err.message }, 500);
+  }
+}
+
+async function handleMeliRefresh(refreshToken, env) {
+  try {
+    const resp = await fetch('https://api.mercadolibre.com/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({
+        grant_type: 'refresh_token',
+        client_id: env.MELI_CLIENT_ID || '782955723270657',
+        client_secret: env.MELI_CLIENT_SECRET,
+        refresh_token: refreshToken,
+      }),
+    });
+
+    const data = await resp.json();
+    if (!resp.ok) {
+      return jsonResponse({ error: data.message || 'Error renovando token', detail: data }, resp.status);
+    }
+
+    return jsonResponse({
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      expires_in: data.expires_in,
+      user_id: data.user_id,
+    });
+  } catch (err) {
+    return jsonResponse({ error: err.message }, 500);
+  }
+}
+
+// ═══════════════════════════════════════════════════════
 // HELPERS
 // ═══════════════════════════════════════════════════════
 
@@ -470,8 +545,9 @@ function getFirst(arr) {
   return Array.isArray(arr) ? arr[0] : arr;
 }
 
-function jsonResponse(data) {
+function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
+    status,
     headers: { 'Content-Type': 'application/json', ...corsHeaders() }
   });
 }
